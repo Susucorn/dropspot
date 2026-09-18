@@ -7,6 +7,7 @@ function WasteSchedule() {
   const [regionMap, setRegionMap] = useState({});
   const [ctpv, setCtpv] = useState('');
   const [sgg, setSgg] = useState('');
+  const [dong, setDong] = useState('');
   const [query, setQuery] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [results, setResults] = useState([]);
@@ -19,9 +20,10 @@ function WasteSchedule() {
         setRegionMap(data);
         const firstCtpv = Object.keys(data)[0];
         if (firstCtpv) {
-          const firstSgg = data[firstCtpv][0] || '';
+          const firstSgg = Object.keys(data[firstCtpv])[0] || '';
           setCtpv(firstCtpv);
           setSgg(firstSgg);
+          setDong('');
           setQuery(`${firstCtpv} ${firstSgg}`);
         }
       })
@@ -43,11 +45,16 @@ function WasteSchedule() {
       });
   }, [ctpv, sgg]);
 
-  // regionMap({시도: [시군구,...]})을 "경기도 가평군" 같은 검색용 리스트로 펼침
+  // regionMap({시도: {시군구: [동/읍/면,...]}})을 "경기도 가평군" / "경기도 가평군 가평읍" 같은 검색용 리스트로 펼침
   const regionOptions = useMemo(() => {
     const list = [];
-    Object.entries(regionMap).forEach(([c, sggs]) => {
-      sggs.forEach((s) => list.push({ ctpv: c, sgg: s, label: `${c} ${s}` }));
+    Object.entries(regionMap).forEach(([c, sggMap]) => {
+      Object.entries(sggMap).forEach(([s, dongs]) => {
+        list.push({ ctpv: c, sgg: s, dong: '', label: `${c} ${s}` });
+        dongs.forEach((d) => {
+          list.push({ ctpv: c, sgg: s, dong: d, label: `${c} ${s} ${d}` });
+        });
+      });
     });
     return list;
   }, [regionMap]);
@@ -57,9 +64,20 @@ function WasteSchedule() {
     return regionOptions.filter((o) => o.label.includes(query.trim())).slice(0, 8);
   }, [query, regionOptions]);
 
+  // 동까지 선택한 경우, 결과에서 해당 동/읍/면이 포함된 항목만 남김
+  const filteredResults = useMemo(() => {
+    if (!dong) return results;
+    return results.filter(
+      (r) =>
+        isValid(r.MNG_ZONE_TRGT_RGN_NM) &&
+        r.MNG_ZONE_TRGT_RGN_NM.split('+').some((zone) => zone.trim() === dong)
+    );
+  }, [results, dong]);
+
   function handleSelect(option) {
     setCtpv(option.ctpv);
     setSgg(option.sgg);
+    setDong(option.dong);
     setQuery(option.label);
     setShowSuggestions(false);
   }
@@ -72,7 +90,7 @@ function WasteSchedule() {
         <input
           type="text"
           className={styles.searchInput}
-          placeholder="시/도, 시/군/구를 입력하세요 (예: 경기도 가평군)"
+          placeholder="시/도, 시/군/구, 동/읍/면을 입력하세요 (예: 경기도 가평군 가평읍)"
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -100,11 +118,14 @@ function WasteSchedule() {
       {loading && <p>불러오는 중...</p>}
       {error && <p className={styles.errorText}>{error}</p>}
       {!loading && !error && results.length === 0 && <p>해당 지역 정보가 없어요.</p>}
+      {!loading && !error && results.length > 0 && filteredResults.length === 0 && (
+        <p>해당 동 정보가 없어요.</p>
+      )}
 
-      {results.map((r, idx) => (
+      {filteredResults.map((r, idx) => (
         <div key={idx} className={styles.card}>
           <p className={styles.cardTitle}>
-            {results.length > 1 ? `${idx + 1}. ` : ''}
+            {filteredResults.length > 1 ? `${idx + 1}. ` : ''}
             {isValid(r.MNG_ZONE_TRGT_RGN_NM) ? r.MNG_ZONE_TRGT_RGN_NM : `${r.CTPV_NM} ${r.SGG_NM}`}
           </p>
 

@@ -103,14 +103,33 @@ async function loadWasteScheduleData() {
   console.log(`배출 규칙 데이터 ${wasteScheduleData.length}건 로드 완료`);
 }
 
+function isValidRegionText(text) {
+  return Boolean(text) && text !== '해당없음' && text !== '없음';
+}
+
+// { 시도: { 시군구: [동/읍/면, ...] } } 형태로 응답 (동 정보는 MNG_ZONE_TRGT_RGN_NM을 "+"로 펼쳐 수집)
 app.get('/api/waste-schedule/regions', (req, res) => {
   const map = {};
   wasteScheduleData.forEach((r) => {
-    if (!r.CTPV_NM) return;
-    if (!map[r.CTPV_NM]) map[r.CTPV_NM] = new Set();
-    if (r.SGG_NM) map[r.CTPV_NM].add(r.SGG_NM);
+    if (!r.CTPV_NM || !r.SGG_NM) return;
+    if (!map[r.CTPV_NM]) map[r.CTPV_NM] = {};
+    if (!map[r.CTPV_NM][r.SGG_NM]) map[r.CTPV_NM][r.SGG_NM] = new Set();
+    if (isValidRegionText(r.MNG_ZONE_TRGT_RGN_NM)) {
+      r.MNG_ZONE_TRGT_RGN_NM.split('+').forEach((zone) => {
+        const trimmed = zone.trim();
+        if (trimmed) map[r.CTPV_NM][r.SGG_NM].add(trimmed);
+      });
+    }
   });
-  const result = Object.fromEntries(Object.entries(map).map(([k, v]) => [k, [...v].sort()]));
+
+  const result = Object.fromEntries(
+    Object.entries(map).map(([ctpv, sggMap]) => [
+      ctpv,
+      Object.fromEntries(
+        Object.entries(sggMap).map(([sgg, dongs]) => [sgg, [...dongs].sort()])
+      ),
+    ])
+  );
   res.json(result);
 });
 
