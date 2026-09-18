@@ -1,36 +1,19 @@
-import { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-
-// 내 위치 전용 아이콘 (파란 동그라미) — 이미지 파일 없이 만들어서 안 깨짐
-const myLocationIcon = new L.DivIcon({
-  className: 'my-location-marker',
-  html: '<div style="background:#4285F4;width:18px;height:18px;border-radius:50%;border:3px solid white;box-shadow:0 0 6px rgba(0,0,0,0.5);"></div>',
-  iconSize: [18, 18],
-  iconAnchor: [9, 9],
-});
-
-function ChangeView({ bins, myLocation }) {
-  const map = useMap();
-  useEffect(() => {
-    if (myLocation) {
-      map.setView(myLocation, 16);
-    } else if (bins.length > 0) {
-      const bounds = bins.map((b) => [parseFloat(b.위도), parseFloat(b.경도)]);
-      map.fitBounds(bounds, { padding: [30, 30] });
-    }
-  }, [bins, myLocation, map]);
-  return null;
-}
+import { useEffect, useRef, useState } from 'react';
+import { Map, MapMarker, CustomOverlayMap, useKakaoLoader } from 'react-kakao-maps-sdk';
 
 function TrashMap() {
+  const [loading, error] = useKakaoLoader({
+    appkey: import.meta.env.VITE_KAKAO_MAP_KEY,
+  });
+
+  const mapRef = useRef(null);
   const [regions, setRegions] = useState([]);
   const [selectedRegion, setSelectedRegion] = useState('부산광역시');
   const [bins, setBins] = useState([]);
   const [myLocation, setMyLocation] = useState(null);
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState('');
+  const [selectedBin, setSelectedBin] = useState(null);
 
   useEffect(() => {
     fetch('http://localhost:4000/api/regions')
@@ -54,6 +37,23 @@ function TrashMap() {
       .catch(console.error);
   }, [selectedRegion, myLocation]);
 
+  // 지도 중심/확대 이동
+  useEffect(() => {
+    if (!mapRef.current || loading) return;
+    const kakao = window.kakao;
+
+    if (myLocation) {
+      mapRef.current.setCenter(new kakao.maps.LatLng(myLocation[0], myLocation[1]));
+      mapRef.current.setLevel(4);
+    } else if (bins.length > 0) {
+      const bounds = new kakao.maps.LatLngBounds();
+      bins.forEach((b) => {
+        bounds.extend(new kakao.maps.LatLng(parseFloat(b.위도), parseFloat(b.경도)));
+      });
+      mapRef.current.setBounds(bounds);
+    }
+  }, [bins, myLocation, loading]);
+
   const findMyLocation = () => {
     setLocationError('');
     if (!navigator.geolocation) {
@@ -64,7 +64,6 @@ function TrashMap() {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords;
-        console.log('내 위치:', latitude, longitude);
         setMyLocation([latitude, longitude]);
         setLocating(false);
         fetch(`http://localhost:4000/api/trashbins/nearby?lat=${latitude}&lng=${longitude}&radius=1`)
@@ -73,13 +72,15 @@ function TrashMap() {
           .catch(console.error);
       },
       (err) => {
-        console.error('위치 가져오기 실패:', err);
         setLocationError(`위치 정보를 가져오지 못했어요 (${err.message})`);
         setLocating(false);
       },
       { enableHighAccuracy: true, timeout: 10000 }
     );
   };
+
+  if (loading) return <div>지도를 불러오는 중...</div>;
+  if (error) return <div>지도를 불러오지 못했어요. 카카오 앱 키/도메인 등록을 확인해주세요.</div>;
 
   return (
     <div>
@@ -121,35 +122,71 @@ function TrashMap() {
         {locationError && <div style={{ color: 'red', marginTop: 4 }}>{locationError}</div>}
       </div>
 
-      <MapContainer center={[36.5, 127.8]} zoom={7} style={{ height: '100vh', width: '100%' }}>
-        <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution="&copy; OpenStreetMap contributors"
-        />
-        <ChangeView bins={bins} myLocation={myLocation} />
+      <Map
+        center={{ lat: 36.5, lng: 127.8 }}
+        level={13}
+        style={{ width: '100%', height: '100vh' }}
+        onCreate={(map) => {
+          mapRef.current = map;
+        }}
+      >
         {myLocation && (
-          <Marker position={myLocation} icon={myLocationIcon}>
-            <Popup>내 위치</Popup>
-          </Marker>
+          <CustomOverlayMap position={{ lat: myLocation[0], lng: myLocation[1] }}>
+            <div
+              style={{
+                width: 18,
+                height: 18,
+                borderRadius: '50%',
+                background: '#4285F4',
+                border: '3px solid white',
+                boxShadow: '0 0 6px rgba(0,0,0,0.5)',
+              }}
+            />
+          </CustomOverlayMap>
         )}
+
         {bins.map((bin, idx) => (
-          <Marker key={idx} position={[parseFloat(bin.위도), parseFloat(bin.경도)]}>
-            <Popup>
-              <b>{bin.설치장소명 || '휴지통'}</b>
+          <MapMarker
+            key={idx}
+            position={{ lat: parseFloat(bin.위도), lng: parseFloat(bin.경도) }}
+            onClick={() => setSelectedBin(bin)}
+          />
+        ))}
+
+        {selectedBin && (
+          <CustomOverlayMap
+            position={{ lat: parseFloat(selectedBin.위도), lng: parseFloat(selectedBin.경도) }}
+            yAnchor={1.4}
+          >
+            <div
+              style={{
+                background: 'white',
+                padding: '8px 10px',
+                borderRadius: 6,
+                boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
+                fontSize: 13,
+                minWidth: 160,
+              }}
+            >
+              <b>{selectedBin.설치장소명 || '휴지통'}</b>
               <br />
-              {bin.소재지도로명주소 || bin.소재지지번주소}
+              {selectedBin.소재지도로명주소 || selectedBin.소재지지번주소}
               <br />
-              종류: {bin.휴지통종류}
-              {bin.distance !== undefined && (
+              종류: {selectedBin.휴지통종류}
+              {selectedBin.distance !== undefined && (
                 <>
                   <br />
-                  거리: 약 {(bin.distance * 1000).toFixed(0)}m
+                  거리: 약 {(selectedBin.distance * 1000).toFixed(0)}m
                 </>
               )}
-            </Popup>
-          </Marker>
-        ))}
-      </MapContainer>
+              <br />
+              <button onClick={() => setSelectedBin(null)} style={{ marginTop: 4 }}>
+                닫기
+              </button>
+            </div>
+          </CustomOverlayMap>
+        )}
+      </Map>
     </div>
   );
 }
