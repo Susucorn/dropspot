@@ -110,6 +110,11 @@ function WasteSchedule() {
     setShowSuggestions(false);
   }
 
+  function handleClearQuery() {
+    setQuery('');
+    setShowSuggestions(false);
+  }
+
   return (
     <div className={styles.container}>
       <h2>우리 동네 배출 규칙 안내</h2>
