@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import styles from '../styles/WasteSchedule.module.css';
 
 function WasteSchedule() {
   const [regionMap, setRegionMap] = useState({});
@@ -39,10 +40,10 @@ function WasteSchedule() {
   }, [ctpv, sgg]);
 
   return (
-    <div style={{ padding: 20, maxWidth: 700, margin: '0 auto' }}>
+    <div className={styles.container}>
       <h2>우리 동네 배출 규칙 안내</h2>
 
-      <div style={{ marginBottom: 16 }}>
+      <div className={styles.selectRow}>
         <select
           value={ctpv}
           onChange={(e) => {
@@ -58,7 +59,7 @@ function WasteSchedule() {
           ))}
         </select>
 
-        <select value={sgg} onChange={(e) => setSgg(e.target.value)} style={{ marginLeft: 8 }}>
+        <select value={sgg} onChange={(e) => setSgg(e.target.value)}>
           {(regionMap[ctpv] || []).map((s) => (
             <option key={s} value={s}>
               {s}
@@ -68,13 +69,13 @@ function WasteSchedule() {
       </div>
 
       {loading && <p>불러오는 중...</p>}
-      {error && <p style={{ color: 'red' }}>{error}</p>}
+      {error && <p className={styles.errorText}>{error}</p>}
       {!loading && !error && results.length === 0 && <p>해당 지역 정보가 없어요.</p>}
 
       {results.map((r, idx) => (
-        <div key={idx} style={{ border: '1px solid #ddd', borderRadius: 8, padding: 16, marginBottom: 12 }}>
+        <div key={idx} className={styles.card}>
           {r.MNG_ZONE_TRGT_RGN_NM && r.MNG_ZONE_TRGT_RGN_NM !== '없음' && (
-            <p style={{ fontWeight: 'bold', marginBottom: 8 }}>{r.MNG_ZONE_TRGT_RGN_NM}</p>
+            <p className={styles.cardTitle}>{r.MNG_ZONE_TRGT_RGN_NM}</p>
           )}
           <p>
             <b>음식물쓰레기</b> — {r.FOD_WST_EMSN_DOW || '정보 없음'} / {r.FOD_WST_EMSN_BGNG_TM}~{r.FOD_WST_EMSN_END_TM}
@@ -91,9 +92,9 @@ function WasteSchedule() {
             <br />
             {r.RCYCL_EMSN_MTHD}
           </p>
-          {r.UNCLLT_DAY && <p style={{ color: '#888', fontSize: 13 }}>미수거일: {r.UNCLLT_DAY}</p>}
+          {r.UNCLLT_DAY && <p className={styles.metaText}>미수거일: {r.UNCLLT_DAY}</p>}
           {r.MNG_DEPT_NM && (
-            <p style={{ color: '#888', fontSize: 13 }}>
+            <p className={styles.metaText}>
               문의: {r.MNG_DEPT_NM} {r.MNG_DEPT_TELNO}
             </p>
           )}

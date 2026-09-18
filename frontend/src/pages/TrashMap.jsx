@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Map, MapMarker, CustomOverlayMap, useKakaoLoader } from 'react-kakao-maps-sdk';
+import styles from '../styles/TrashMap.module.css';
 
 function TrashMap() {
   const [loading, error] = useKakaoLoader({
@@ -37,7 +38,6 @@ function TrashMap() {
       .catch(console.error);
   }, [selectedRegion, myLocation]);
 
-  // 지도 중심/확대 이동
   useEffect(() => {
     if (!mapRef.current || loading) return;
     const kakao = window.kakao;
@@ -84,19 +84,7 @@ function TrashMap() {
 
   return (
     <div>
-      <div
-        style={{
-          position: 'absolute',
-          zIndex: 1000,
-          top: 10,
-          left: 10,
-          background: 'white',
-          padding: '8px 12px',
-          borderRadius: '8px',
-          boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
-          maxWidth: 280,
-        }}
-      >
+      <div className={styles.controlPanel}>
         <select
           value={selectedRegion}
           onChange={(e) => {
@@ -110,18 +98,19 @@ function TrashMap() {
             </option>
           ))}
         </select>
-        <button onClick={findMyLocation} style={{ marginLeft: 8 }} disabled={locating}>
+        <button className={styles.button} onClick={findMyLocation} disabled={locating}>
           {locating ? '위치 찾는 중...' : '내 위치 주변 보기'}
         </button>
         {myLocation && (
-          <button onClick={() => setMyLocation(null)} style={{ marginLeft: 8 }}>
+          <button className={styles.button} onClick={() => setMyLocation(null)}>
             지역별로 보기
           </button>
         )}
         <div>휴지통 {bins.length}개</div>
-        {locationError && <div style={{ color: 'red', marginTop: 4 }}>{locationError}</div>}
+        {locationError && <div className={styles.errorText}>{locationError}</div>}
       </div>
 
+      {/* Map 컴포넌트는 react-kakao-maps-sdk 라이브러리 자체 props라 style은 인라인으로 유지 */}
       <Map
         center={{ lat: 36.5, lng: 127.8 }}
         level={13}
@@ -132,16 +121,7 @@ function TrashMap() {
       >
         {myLocation && (
           <CustomOverlayMap position={{ lat: myLocation[0], lng: myLocation[1] }}>
-            <div
-              style={{
-                width: 18,
-                height: 18,
-                borderRadius: '50%',
-                background: '#4285F4',
-                border: '3px solid white',
-                boxShadow: '0 0 6px rgba(0,0,0,0.5)',
-              }}
-            />
+            <div className={styles.myLocationDot} />
           </CustomOverlayMap>
         )}
 
@@ -158,16 +138,7 @@ function TrashMap() {
             position={{ lat: parseFloat(selectedBin.위도), lng: parseFloat(selectedBin.경도) }}
             yAnchor={1.4}
           >
-            <div
-              style={{
-                background: 'white',
-                padding: '8px 10px',
-                borderRadius: 6,
-                boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
-                fontSize: 13,
-                minWidth: 160,
-              }}
-            >
+            <div className={styles.popup}>
               <b>{selectedBin.설치장소명 || '휴지통'}</b>
               <br />
               {selectedBin.소재지도로명주소 || selectedBin.소재지지번주소}
@@ -180,9 +151,7 @@ function TrashMap() {
                 </>
               )}
               <br />
-              <button onClick={() => setSelectedBin(null)} style={{ marginTop: 4 }}>
-                닫기
-              </button>
+              <button onClick={() => setSelectedBin(null)}>닫기</button>
             </div>
           </CustomOverlayMap>
         )}

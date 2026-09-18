@@ -1,0 +1,38 @@
+.controlPanel {
+  position: absolute;
+  z-index: 1000;
+  top: 10px;
+  left: 10px;
+  background: white;
+  padding: 8px 12px;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  max-width: 280px;
+}
+
+.button {
+  margin-left: 8px;
+}
+
+.errorText {
+  color: red;
+  margin-top: 4px;
+}
+
+.myLocationDot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #4285f4;
+  border: 3px solid white;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.5);
+}
+
+.popup {
+  background: white;
+  padding: 8px 10px;
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  font-size: 13px;
+  min-width: 160px;
+}

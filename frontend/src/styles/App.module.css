@@ -1,0 +1,31 @@
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 140px;
+  z-index: 2000;
+  background: #222;
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.navLink {
+  color: white;
+  text-decoration: none;
+  font-weight: normal;
+}
+
+.navLinkActive {
+  color: white;
+  text-decoration: none;
+  font-weight: bold;
+}
+
+.content {
+  margin-left: 140px;
+  position: relative;
+  min-height: 100vh;
+}
