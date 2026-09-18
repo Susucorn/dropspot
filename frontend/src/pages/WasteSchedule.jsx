@@ -74,6 +74,34 @@ function WasteSchedule() {
     );
   }, [results, dong]);
 
+  // 동을 선택했다면 "구포동+금곡동+화명동+..." 대신 선택한 동 이름만 제목으로 사용
+  function getRegionTitle(r) {
+    if (dong && isValid(r.MNG_ZONE_TRGT_RGN_NM)) {
+      const zones = r.MNG_ZONE_TRGT_RGN_NM.split('+').map((z) => z.trim());
+      if (zones.includes(dong)) return dong;
+    }
+    return isValid(r.MNG_ZONE_TRGT_RGN_NM) ? r.MNG_ZONE_TRGT_RGN_NM : `${r.CTPV_NM} ${r.SGG_NM}`;
+  }
+
+  // 수거 지점(EMSN_PLC)만 다르고 화면에 보이는 배출 규칙 내용은 완전히 같은 항목은 하나로 합침
+  const dedupedResults = useMemo(() => {
+    const seen = new Set();
+    return filteredResults.filter((r) => {
+      const key = JSON.stringify({
+        title: getRegionTitle(r),
+        rows: buildWeeklyRows(r),
+        bulkMethod: isValid(r.TMPRY_BULK_WASTE_EMSN_MTHD) ? r.TMPRY_BULK_WASTE_EMSN_MTHD : '',
+        bulkPlace: isValid(r.TMPRY_BULK_WASTE_EMSN_PLC) ? r.TMPRY_BULK_WASTE_EMSN_PLC : '',
+        uncolltDay: r.UNCLLT_DAY || '',
+        deptName: r.MNG_DEPT_NM || '',
+        deptTel: r.MNG_DEPT_TELNO || '',
+      });
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [filteredResults, dong]);
+
   function handleSelect(option) {
     setCtpv(option.ctpv);
     setSgg(option.sgg);
@@ -99,6 +127,19 @@ function WasteSchedule() {
           onFocus={() => setShowSuggestions(true)}
           onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
         />
+        {query && (
+          <button
+            type="button"
+            className={styles.clearButton}
+            aria-label="검색어 지우기"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              handleClearQuery();
+            }}
+          >
+            ×
+          </button>
+        )}
         {showSuggestions && suggestions.length > 0 && (
           <ul className={styles.suggestionList}>
             {suggestions.map((o) => (
@@ -122,11 +163,11 @@ function WasteSchedule() {
         <p>해당 동 정보가 없어요.</p>
       )}
 
-      {filteredResults.map((r, idx) => (
+      {dedupedResults.map((r, idx) => (
         <div key={idx} className={styles.card}>
           <p className={styles.cardTitle}>
-            {filteredResults.length > 1 ? `${idx + 1}. ` : ''}
-            {isValid(r.MNG_ZONE_TRGT_RGN_NM) ? r.MNG_ZONE_TRGT_RGN_NM : `${r.CTPV_NM} ${r.SGG_NM}`}
+            {dedupedResults.length > 1 ? `${idx + 1}. ` : ''}
+            {getRegionTitle(r)}
           </p>
 
           <table className={styles.table}>
