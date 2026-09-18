@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Map, MapMarker, CustomOverlayMap, useKakaoLoader } from 'react-kakao-maps-sdk';
 import styles from '../styles/TrashMap.module.css';
+import { fetchRegions, fetchTrashbinsByRegion, fetchNearbyTrashbins } from '../api/trashbinApi';
+import { filterValidBins } from '../utils/trashbinUtils';
+import { fitBoundsToBins, centerMapOnLocation } from '../utils/kakaoMapUtils';
+import { getCurrentLocation } from '../utils/geolocation';
 
 function TrashMap() {
   const [loading, error] = useKakaoLoader({
@@ -17,66 +21,40 @@ function TrashMap() {
   const [selectedBin, setSelectedBin] = useState(null);
 
   useEffect(() => {
-    fetch('http://localhost:4000/api/regions')
-      .then((res) => res.json())
-      .then(setRegions)
-      .catch(console.error);
+    fetchRegions().then(setRegions).catch(console.error);
   }, []);
 
   useEffect(() => {
     if (myLocation) return;
-    fetch(`http://localhost:4000/api/trashbins?sido=${encodeURIComponent(selectedRegion)}`)
-      .then((res) => res.json())
-      .then((data) => {
-        const filtered = data.filter((item) => {
-          const lat = parseFloat(item.위도);
-          const lng = parseFloat(item.경도);
-          return !isNaN(lat) && !isNaN(lng);
-        });
-        setBins(filtered);
-      })
+    fetchTrashbinsByRegion(selectedRegion)
+      .then((data) => setBins(filterValidBins(data)))
       .catch(console.error);
   }, [selectedRegion, myLocation]);
 
   useEffect(() => {
     if (!mapRef.current || loading) return;
-    const kakao = window.kakao;
 
     if (myLocation) {
-      mapRef.current.setCenter(new kakao.maps.LatLng(myLocation[0], myLocation[1]));
-      mapRef.current.setLevel(4);
+      centerMapOnLocation(mapRef.current, myLocation, 4);
     } else if (bins.length > 0) {
-      const bounds = new kakao.maps.LatLngBounds();
-      bins.forEach((b) => {
-        bounds.extend(new kakao.maps.LatLng(parseFloat(b.위도), parseFloat(b.경도)));
-      });
-      mapRef.current.setBounds(bounds);
+      fitBoundsToBins(mapRef.current, bins);
     }
   }, [bins, myLocation, loading]);
 
   const findMyLocation = () => {
     setLocationError('');
-    if (!navigator.geolocation) {
-      setLocationError('이 브라우저는 위치 정보를 지원하지 않아요.');
-      return;
-    }
     setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const { latitude, longitude } = pos.coords;
-        setMyLocation([latitude, longitude]);
+    getCurrentLocation()
+      .then((location) => {
+        setMyLocation(location);
         setLocating(false);
-        fetch(`http://localhost:4000/api/trashbins/nearby?lat=${latitude}&lng=${longitude}&radius=1`)
-          .then((res) => res.json())
-          .then(setBins)
-          .catch(console.error);
-      },
-      (err) => {
+        return fetchNearbyTrashbins(location[0], location[1], 1);
+      })
+      .then(setBins)
+      .catch((err) => {
         setLocationError(`위치 정보를 가져오지 못했어요 (${err.message})`);
         setLocating(false);
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
+      });
   };
 
   if (loading) return <div>지도를 불러오는 중...</div>;
@@ -110,7 +88,6 @@ function TrashMap() {
         {locationError && <div className={styles.errorText}>{locationError}</div>}
       </div>
 
-      {/* Map 컴포넌트는 react-kakao-maps-sdk 라이브러리 자체 props라 style은 인라인으로 유지 */}
       <Map
         center={{ lat: 36.5, lng: 127.8 }}
         level={13}
