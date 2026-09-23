@@ -70,14 +70,14 @@ function WasteSchedule() {
     return results.filter(
       (r) =>
         isValid(r.MNG_ZONE_TRGT_RGN_NM) &&
-        r.MNG_ZONE_TRGT_RGN_NM.split('+').some((zone) => zone.trim() === dong)
+        splitZoneNames(r.MNG_ZONE_TRGT_RGN_NM).some((zone) => normalizeZoneName(zone) === dong)
     );
   }, [results, dong]);
 
   // 동을 선택했다면 "구포동+금곡동+화명동+..." 대신 선택한 동 이름만 제목으로 사용
   function getRegionTitle(r) {
     if (dong && isValid(r.MNG_ZONE_TRGT_RGN_NM)) {
-      const zones = r.MNG_ZONE_TRGT_RGN_NM.split('+').map((z) => z.trim());
+      const zones = splitZoneNames(r.MNG_ZONE_TRGT_RGN_NM).map(normalizeZoneName);
       if (zones.includes(dong)) return dong;
     }
     return isValid(r.MNG_ZONE_TRGT_RGN_NM) ? r.MNG_ZONE_TRGT_RGN_NM : `${r.CTPV_NM} ${r.SGG_NM}`;

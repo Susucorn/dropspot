@@ -2,6 +2,36 @@ export function isValid(text) {
   return text && text !== '해당없음' && text !== '없음';
 }
 
+// MNG_ZONE_TRGT_RGN_NM은 지역마다 구분자가 "+" 또는 ","로 다르고, 괄호 안에도
+// ","가 섞여있어(예: "석남1동(456~467, 480~484)") 괄호 밖의 구분자만 기준으로 쪼갬
+export function splitZoneNames(text) {
+  const zones = [];
+  let current = '';
+  let depth = 0;
+  for (const ch of text) {
+    if (ch === '(') depth += 1;
+    else if (ch === ')') depth = Math.max(0, depth - 1);
+
+    if ((ch === '+' || ch === ',') && depth === 0) {
+      zones.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  if (current) zones.push(current);
+  return zones.map((z) => z.trim()).filter(Boolean);
+}
+
+// "석남1동(456~467, 480~484)" -> "석남1동" 처럼 끝에 붙은 부연설명 괄호를 제거
+export function normalizeZoneName(zone) {
+  let name = zone.trim();
+  while (/\([^()]*\)\s*$/.test(name)) {
+    name = name.replace(/\s*\([^()]*\)\s*$/, '').trim();
+  }
+  return name;
+}
+
 const DAYS = ['월', '화', '수', '목', '금', '토', '일'];
 
 function parseDays(dowStr) {
