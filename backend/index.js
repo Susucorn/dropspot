@@ -172,6 +172,68 @@ app.get('/api/waste-schedule', (req, res) => {
   res.json(matched);
 });
 
+// ── 분리배출 정보조회 서비스 (기후에너지환경부, 실시간 프록시) ──
+const WASTE_ITEM_BASE_URL = 'https://apis.data.go.kr/1482000/WasteRecyclingService';
+
+async function callWasteRecyclingApi(operation, params) {
+  const serviceKey = process.env.WASTE_ITEM_SERVICE_KEY;
+  if (!serviceKey) {
+    throw Object.assign(new Error('WASTE_ITEM_SERVICE_KEY가 .env에 없어요!'), { status: 500 });
+  }
+
+  const query = new URLSearchParams({
+    serviceKey,
+    pageNo: '1',
+    numOfRows: '20',
+    returnType: 'json',
+    ...params,
+  });
+  const response = await fetch(`${WASTE_ITEM_BASE_URL}/${operation}?${query.toString()}`);
+  const data = await response.json();
+
+  const header = data?.response?.header;
+  if (!header || (header.resultCode !== '00' && header.resultCode !== '03')) {
+    throw Object.assign(new Error(header?.resultMsg || '분리배출 정보를 불러오지 못했어요.'), {
+      status: 502,
+    });
+  }
+
+  const items = data.response.body?.items?.item || [];
+  return Array.isArray(items) ? items : [items];
+}
+
+// 배출품목 정보 조회: 품목명으로 배출방법 검색
+app.get('/api/waste-items', async (req, res) => {
+  const itemNm = (req.query.itemNm || '').trim();
+  if (!itemNm) {
+    return res.status(400).json({ error: '품목명을 입력해주세요.' });
+  }
+
+  try {
+    const items = await callWasteRecyclingApi('getItem', { itemNm });
+    res.json(items);
+  } catch (err) {
+    console.error('배출품목 조회 실패:', err);
+    res.status(err.status || 502).json({ error: err.message });
+  }
+});
+
+// 분리배출 장소정보 조회: 동 이름으로 배출 장소 검색
+app.get('/api/waste-spots', async (req, res) => {
+  const addr = (req.query.addr || '').trim();
+  if (!addr) {
+    return res.status(400).json({ error: '동 이름을 입력해주세요.' });
+  }
+
+  try {
+    const spots = await callWasteRecyclingApi('getSpot', { addr });
+    res.json(spots);
+  } catch (err) {
+    console.error('분리배출 장소 조회 실패:', err);
+    res.status(err.status || 502).json({ error: err.message });
+  }
+});
+
 // ── 서버 시작: 배출 규칙 데이터 로드 후 실행 (몇 초 걸릴 수 있어요) ──
 loadWasteScheduleData()
   .catch((err) => console.error('배출 규칙 데이터 로드 실패:', err))
