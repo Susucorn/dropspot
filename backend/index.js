@@ -145,9 +145,9 @@ app.get('/api/waste-schedule/regions', (req, res) => {
     if (!map[r.CTPV_NM]) map[r.CTPV_NM] = {};
     if (!map[r.CTPV_NM][r.SGG_NM]) map[r.CTPV_NM][r.SGG_NM] = new Set();
     if (isValidRegionText(r.MNG_ZONE_TRGT_RGN_NM)) {
-      r.MNG_ZONE_TRGT_RGN_NM.split('+').forEach((zone) => {
-        const trimmed = zone.trim();
-        if (trimmed) map[r.CTPV_NM][r.SGG_NM].add(trimmed);
+      splitZoneNames(r.MNG_ZONE_TRGT_RGN_NM).forEach((zone) => {
+        const cleaned = normalizeZoneName(zone);
+        if (cleaned) map[r.CTPV_NM][r.SGG_NM].add(cleaned);
       });
     }
   });

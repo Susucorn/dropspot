@@ -1,7 +1,208 @@
 import { useEffect, useMemo, useState } from 'react';
 import styles from '../styles/WasteSchedule.module.css';
 import { fetchRegions, fetchSchedule } from '../api/wasteScheduleApi';
-import { isValid, buildWeeklyRows } from '../utils/wasteScheduleUtils';
+import { fetchWasteItems, fetchWasteSpots } from '../api/wasteRecyclingApi';
+import { isValid, buildWeeklyRows, splitZoneNames, normalizeZoneName } from '../utils/wasteScheduleUtils';
+
+const SEARCH_DEBOUNCE_MS = 300;
+
+function SearchIcon({ className }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+      <line x1="16.65" y1="16.65" x2="21" y2="21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+// 배출품목명으로 배출방법을 검색하는 독립 검색창 (기후에너지환경부 분리배출 정보조회 서비스 getItem)
+function WasteItemSearch() {
+  const [query, setQuery] = useState('');
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  function runSearch(q) {
+    const trimmed = q.trim();
+    if (!trimmed) {
+      setItems([]);
+      setError('');
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError('');
+    fetchWasteItems(trimmed)
+      .then((data) => {
+        setItems(Array.isArray(data) ? data : []);
+        setLoading(false);
+      })
+      .catch(() => {
+        setError('배출품목 정보를 불러오지 못했어요.');
+        setLoading(false);
+      });
+  }
+
+  useEffect(() => {
+    const timer = setTimeout(() => runSearch(query), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
+  return (
+    <section className={styles.section}>
+      <h3 className={styles.sectionTitle}>배출품목으로 배출방법 찾기</h3>
+      <div className={styles.searchCard}>
+        <div className={styles.searchRow}>
+          <div className={styles.inputWrap}>
+            <input
+              type="text"
+              className={styles.searchInput}
+              placeholder="품목명을 입력하세요 (예: 화분, 소화기, 형광등)"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            {query && (
+              <button
+                type="button"
+                className={styles.clearButton}
+                aria-label="검색어 지우기"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setQuery('');
+                }}
+              >
+                ×
+              </button>
+            )}
+          </div>
+          <button
+            type="button"
+            className={styles.searchSubmitButton}
+            aria-label="검색"
+            onClick={() => runSearch(query)}
+          >
+            <SearchIcon className={styles.searchButtonIcon} />
+          </button>
+        </div>
+      </div>
+
+      {loading && <p>검색 중...</p>}
+      {error && <p className={styles.errorText}>{error}</p>}
+      {!loading && !error && query.trim() && items.length === 0 && <p>검색 결과가 없어요.</p>}
+
+      {items.length > 0 && (
+        <ul className={styles.resultList}>
+          {items.map((it, idx) => (
+            <li key={idx} className={styles.resultRow}>
+              <span className={styles.resultName}>{it.itemNm}</span>
+              <span className={styles.resultDetail}>{it.dschgMthd}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+// 동 이름으로 분리배출 장소를 검색하는 독립 검색창 (기후에너지환경부 분리배출 정보조회 서비스 getSpot)
+function WasteSpotSearch() {
+  const [query, setQuery] = useState('');
+  const [spots, setSpots] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  function runSearch(q) {
+    const trimmed = q.trim();
+    if (!trimmed) {
+      setSpots([]);
+      setError('');
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError('');
+    fetchWasteSpots(trimmed)
+      .then((data) => {
+        setSpots(Array.isArray(data) ? data : []);
+        setLoading(false);
+      })
+      .catch(() => {
+        setError('분리배출 장소 정보를 불러오지 못했어요.');
+        setLoading(false);
+      });
+  }
+
+  useEffect(() => {
+    const timer = setTimeout(() => runSearch(query), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
+  return (
+    <section className={styles.section}>
+      <h3 className={styles.sectionTitle}>동 이름으로 분리배출 장소 찾기</h3>
+      <div className={styles.searchCard}>
+        <div className={styles.searchRow}>
+          <div className={styles.inputWrap}>
+            <input
+              type="text"
+              className={styles.searchInput}
+              placeholder="동 이름을 입력하세요 (예: 화명동)"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            {query && (
+              <button
+                type="button"
+                className={styles.clearButton}
+                aria-label="검색어 지우기"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setQuery('');
+                }}
+              >
+                ×
+              </button>
+            )}
+          </div>
+          <button
+            type="button"
+            className={styles.searchSubmitButton}
+            aria-label="검색"
+            onClick={() => runSearch(query)}
+          >
+            <SearchIcon className={styles.searchButtonIcon} />
+          </button>
+        </div>
+      </div>
+
+      {loading && <p>검색 중...</p>}
+      {error && <p className={styles.errorText}>{error}</p>}
+      {!loading && !error && query.trim() && spots.length === 0 && <p>검색 결과가 없어요.</p>}
+
+      {spots.length > 0 && (
+        <ul className={styles.resultList}>
+          {spots.map((s, idx) => (
+            <li key={idx} className={styles.resultRow}>
+              <span className={styles.resultName}>{s.spotNm}</span>
+              <span className={styles.resultDetail}>
+                {s.addrBase}
+                {isValid(s.addrDtl) ? ` ${s.addrDtl}` : ''}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
 
 function WasteSchedule() {
   const [regionMap, setRegionMap] = useState({});
@@ -216,6 +417,11 @@ function WasteSchedule() {
           )}
         </div>
       ))}
+
+      <hr className={styles.divider} />
+      <WasteItemSearch />
+      <hr className={styles.divider} />
+      <WasteSpotSearch />
     </div>
   );
 }
