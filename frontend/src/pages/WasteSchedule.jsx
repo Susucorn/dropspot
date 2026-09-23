@@ -217,17 +217,7 @@ function WasteSchedule() {
 
   useEffect(() => {
     fetchRegions()
-      .then((data) => {
-        setRegionMap(data);
-        const firstCtpv = Object.keys(data)[0];
-        if (firstCtpv) {
-          const firstSgg = Object.keys(data[firstCtpv])[0] || '';
-          setCtpv(firstCtpv);
-          setSgg(firstSgg);
-          setDong('');
-          setQuery(`${firstCtpv} ${firstSgg}`);
-        }
-      })
+      .then((data) => setRegionMap(data))
       .catch(() => setError('지역 목록을 불러오지 못했어요.'));
   }, []);
 
@@ -320,52 +310,68 @@ function WasteSchedule() {
     <div className={styles.container}>
       <h2>우리 동네 배출 규칙 안내</h2>
 
-      <div className={styles.searchBox}>
-        <input
-          type="text"
-          className={styles.searchInput}
-          placeholder="시/도, 시/군/구, 동/읍/면을 입력하세요 (예: 경기도 가평군 가평읍)"
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setShowSuggestions(true);
-          }}
-          onFocus={() => setShowSuggestions(true)}
-          onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-        />
-        {query && (
+      <div className={styles.searchCard}>
+        <div className={styles.searchRow}>
+          <div className={styles.inputWrap}>
+            <input
+              type="text"
+              className={styles.searchInput}
+              placeholder="시/도, 시/군/구, 동/읍/면을 입력하세요 (예: 경기도 가평군 가평읍)"
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setShowSuggestions(true);
+              }}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+            />
+            {query && (
+              <button
+                type="button"
+                className={styles.clearButton}
+                aria-label="검색어 지우기"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  handleClearQuery();
+                }}
+              >
+                ×
+              </button>
+            )}
+            {showSuggestions && suggestions.length > 0 && (
+              <ul className={styles.suggestionList}>
+                {suggestions.map((o) => (
+                  <li key={o.label} className={styles.suggestionItem} onMouseDown={() => handleSelect(o)}>
+                    {o.label}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {showSuggestions && query.trim() && suggestions.length === 0 && (
+              <ul className={styles.suggestionList}>
+                <li className={styles.suggestionEmpty}>검색 결과가 없어요.</li>
+              </ul>
+            )}
+          </div>
           <button
             type="button"
-            className={styles.clearButton}
-            aria-label="검색어 지우기"
+            className={styles.searchSubmitButton}
+            aria-label="검색"
             onMouseDown={(e) => {
               e.preventDefault();
-              handleClearQuery();
+              setShowSuggestions(true);
             }}
           >
-            ×
+            <SearchIcon className={styles.searchButtonIcon} />
           </button>
-        )}
-        {showSuggestions && suggestions.length > 0 && (
-          <ul className={styles.suggestionList}>
-            {suggestions.map((o) => (
-              <li key={o.label} className={styles.suggestionItem} onMouseDown={() => handleSelect(o)}>
-                {o.label}
-              </li>
-            ))}
-          </ul>
-        )}
-        {showSuggestions && query.trim() && suggestions.length === 0 && (
-          <ul className={styles.suggestionList}>
-            <li className={styles.suggestionEmpty}>검색 결과가 없어요.</li>
-          </ul>
-        )}
+        </div>
       </div>
 
       {loading && <p>불러오는 중...</p>}
       {error && <p className={styles.errorText}>{error}</p>}
-      {!loading && !error && results.length === 0 && <p>해당 지역 정보가 없어요.</p>}
-      {!loading && !error && results.length > 0 && filteredResults.length === 0 && (
+      {!loading && !error && !ctpv && <p>지역을 검색해서 선택해주세요.</p>}
+      {!loading && !error && ctpv && results.length === 0 && <p>해당 지역 정보가 없어요.</p>}
+      {!loading && !error && ctpv && results.length > 0 && filteredResults.length === 0 && (
         <p>해당 동 정보가 없어요.</p>
       )}
 
