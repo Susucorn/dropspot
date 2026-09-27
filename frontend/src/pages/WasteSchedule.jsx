@@ -2,7 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import styles from '../styles/WasteSchedule.module.css';
 import { fetchRegions, fetchSchedule } from '../api/wasteScheduleApi';
 import { fetchWasteItems, fetchWasteSpots } from '../api/wasteRecyclingApi';
-import { isValid, buildWeeklyRows, splitZoneNames, normalizeZoneName } from '../utils/wasteScheduleUtils';
+import {
+  isValid,
+  buildWeeklyRows,
+  splitZoneNames,
+  normalizeZoneName,
+  formatItemList,
+} from '../utils/wasteScheduleUtils';
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -412,10 +418,11 @@ function WasteSchedule() {
           {isValid(r.TMPRY_BULK_WASTE_EMSN_MTHD) && (
             <p className={styles.metaText}>
               대형폐기물: {r.TMPRY_BULK_WASTE_EMSN_MTHD}
-              {isValid(r.TMPRY_BULK_WASTE_EMSN_PLC) && ` (배출 장소: ${r.TMPRY_BULK_WASTE_EMSN_PLC})`}
+              {isValid(r.TMPRY_BULK_WASTE_EMSN_PLC) &&
+                ` (배출 장소: ${formatItemList(r.TMPRY_BULK_WASTE_EMSN_PLC)})`}
             </p>
           )}
-          {r.UNCLLT_DAY && <p className={styles.metaText}>미수거일: {r.UNCLLT_DAY}</p>}
+          {r.UNCLLT_DAY && <p className={styles.metaText}>미수거일: {formatItemList(r.UNCLLT_DAY)}</p>}
           {r.MNG_DEPT_NM && (
             <p className={styles.metaText}>
               문의: {r.MNG_DEPT_NM} {r.MNG_DEPT_TELNO}
