@@ -32,6 +32,25 @@ export function normalizeZoneName(zone) {
   return name;
 }
 
+// API 원본 데이터에서 종종 끝이 잘려서 들어오는 항목명을 정상 형태로 되돌림
+const TRUNCATED_TEXT_FIXES = {
+  재활용쓰: '재활용쓰레기',
+  음식물쓰: '음식물쓰레기',
+  일반쓰: '일반쓰레기',
+};
+
+// "집앞+상가 앞", "일요일+설명절+추석명절+공휴일" 처럼 "+"로 여러 항목이 붙어서 오는
+// 텍스트를 ", "로 구분해 보여주고, 잘린 채로 들어오는 항목명은 정상 형태로 보정
+export function formatItemList(text) {
+  if (!text) return text;
+  return text
+    .split('+')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => TRUNCATED_TEXT_FIXES[s] || s)
+    .join(', ');
+}
+
 const DAYS = ['월', '화', '수', '목', '금', '토', '일'];
 
 function parseDays(dowStr) {
@@ -83,4 +102,24 @@ export function buildWeeklyRows(r) {
   });
 
   return DAYS.map((d) => ({ day: d, items: dayMap[d] }));
+}
+
+// 화면에 실제로 보여지는 내용(제목/요일별 표/대형폐기물 안내 등)이 완전히 같은 레코드는
+// 수거 지점만 다른 중복으로 보고 하나만 남김
+export function dedupeScheduleResults(results) {
+  const seen = new Set();
+  return results.filter((r) => {
+    const key = JSON.stringify({
+      title: isValid(r.MNG_ZONE_TRGT_RGN_NM) ? r.MNG_ZONE_TRGT_RGN_NM : `${r.CTPV_NM} ${r.SGG_NM}`,
+      rows: buildWeeklyRows(r),
+      bulkMethod: isValid(r.TMPRY_BULK_WASTE_EMSN_MTHD) ? r.TMPRY_BULK_WASTE_EMSN_MTHD : '',
+      bulkPlace: isValid(r.TMPRY_BULK_WASTE_EMSN_PLC) ? r.TMPRY_BULK_WASTE_EMSN_PLC : '',
+      uncolltDay: r.UNCLLT_DAY || '',
+      deptName: r.MNG_DEPT_NM || '',
+      deptTel: r.MNG_DEPT_TELNO || '',
+    });
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }

@@ -12,3 +12,10 @@ export function centerMapOnLocation(map, location, level = 4) {
   map.setCenter(new kakao.maps.LatLng(location[0], location[1]));
   map.setLevel(level);
 }
+
+// 클러스터 아이콘을 클릭했을 때 그 지점으로 확대해 개별 아이콘이 보이게 함
+export function zoomIntoCluster(map, lat, lng, level) {
+  const kakao = window.kakao;
+  map.setCenter(new kakao.maps.LatLng(lat, lng));
+  map.setLevel(level);
+}
