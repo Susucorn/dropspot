@@ -96,7 +96,7 @@ export function buildWeeklyRows(r) {
     const targetDays = days.length >= 7 ? DAYS : days;
     targetDays.forEach((d) => {
       if (dayMap[d]) {
-        dayMap[d].push(`${cat.name} (${timeText})`);
+        dayMap[d].push({ name: cat.name, time: timeText });
       }
     });
   });

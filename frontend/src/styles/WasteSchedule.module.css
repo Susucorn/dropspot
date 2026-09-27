@@ -144,60 +144,143 @@
   margin: 0 0 12px;
 }
 
-.table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
+/* 요일을 가로로 나열하면 좁은 패널에서 잘려 보였기 때문에, 월~일 순서 그대로
+   위에서 아래로 쌓이는 세로 리스트(요일 = 한 행)로 구성해 모든 요일이 한눈에 들어오게 함 */
+.dayGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
 }
 
-.table th,
-.table td {
-  border: 1px solid #ebebeb;
-  padding: 10px;
-  text-align: left;
-  vertical-align: top;
-}
-
-.table th {
-  background: #f7f7f7;
-  font-weight: 600;
-}
-
-.dayHeader {
-  width: 64px;
-}
-
-.dayCell {
-  font-weight: 600;
-  text-align: center;
+.dayCard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 8px 10px;
   background: #fafafa;
+  min-width: 0;
 }
 
-.itemChip {
-  display: inline-block;
-  background: #eef7ee;
-  color: #2e7d32;
-  border-radius: 6px;
+.dayLabel {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid #ddd;
+  background: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  color: #333;
+}
+
+.itemBadgeList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.itemBadge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 4px 8px;
-  margin: 2px 4px 2px 0;
+  border-radius: 6px;
+  background: #eee;
+  color: #444;
+}
+
+.itemHeader {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.itemIcon {
+  font-size: 13px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.itemName {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.itemTime {
+  font-size: 11px;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+
+.catFood {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.catGeneral {
+  background: #eceff1;
+  color: #455a64;
+}
+
+.catRecycle {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.noItemBadge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #e0e0e0;
+  color: #757575;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.noItemIcon {
   font-size: 13px;
 }
 
-.noItem {
-  color: #aaa;
-  font-size: 13px;
+.infoBox {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff;
+  margin-top: 8px;
 }
 
-.metaText {
-  font-size: 13px;
-  color: #666;
-  margin: 6px 0 0;
+.infoBoxIcon {
+  font-size: 18px;
+  line-height: 1;
+  flex-shrink: 0;
 }
 
-.divider {
-  border: none;
-  border-top: 1px solid #e0e0e0;
-  margin: 32px 0 24px;
+.infoBoxLabel {
+  font-weight: 700;
+  font-size: 12px;
+  color: #555;
+  margin: 0 0 2px;
+}
+
+.infoBoxText {
+  font-size: 13px;
+  color: #333;
+  margin: 0;
 }
 
 .section {
@@ -209,29 +292,23 @@
   margin: 0 0 12px;
 }
 
-.resultList {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.resultRow {
-  padding: 10px 12px;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  margin-bottom: 8px;
-  background: #fff;
-}
-
-.resultName {
-  display: block;
-  font-weight: 600;
-  font-size: 14px;
-}
-
 .resultDetail {
   display: block;
   font-size: 13px;
   color: #666;
   margin-top: 2px;
+}
+
+.resultGroup {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: #fff;
+}
+
+.resultGroupTitle {
+  font-weight: 700;
+  font-size: 14px;
+  margin: 0 0 8px;
 }
