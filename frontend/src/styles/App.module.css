@@ -1,31 +1,128 @@
-.sidebar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: 140px;
-  z-index: 2000;
-  background: #222;
-  padding: 20px 16px;
+.appShell {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  height: 100vh;
 }
 
-.navLink {
-  color: white;
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  height: 64px;
+  padding: 0 24px;
+  background: #fff;
+  border-bottom: 1px solid #e5e4e7;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brandName {
+  font-size: 18px;
+  font-weight: 700;
+  color: #222;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.headerSearch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 220px;
+  padding: 7px 14px;
+  border: 1px solid #e0e0e0;
+  border-radius: 999px;
+  background: #f4f6f5;
+}
+
+.headerSearchIcon {
+  width: 14px;
+  height: 14px;
+  color: #888;
+  flex-shrink: 0;
+}
+
+.headerSearchInput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+}
+
+.userMenuButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border: 1px solid #e0e0e0;
+  border-radius: 50%;
+  background: #fff;
+  color: #555;
+  cursor: pointer;
+}
+
+.userMenuButton:hover {
+  background: #f2f2f2;
+}
+
+.nav {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 0 20px;
+  background: #fff;
+  border-bottom: 1px solid #e5e4e7;
+}
+
+.navTab,
+.navTabActive {
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 600;
   text-decoration: none;
-  font-weight: normal;
+  border-bottom: 2px solid transparent;
 }
 
-.navLinkActive {
-  color: white;
-  text-decoration: none;
-  font-weight: bold;
+.navTab {
+  color: #666;
 }
 
-.content {
-  margin-left: 140px;
+.navTab:hover {
+  color: #333;
+}
+
+.navTabActive {
+  color: #2e7d32;
+  font-weight: 700;
+  border-bottom-color: #4caf50;
+}
+
+.main {
   position: relative;
-  min-height: 100vh;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.footer {
+  flex-shrink: 0;
+  padding: 12px 24px;
+  background: #fafafa;
+  border-top: 1px solid #eee;
+  color: #999;
+  font-size: 12px;
+  text-align: center;
 }
