@@ -4,7 +4,13 @@ import styles from '../styles/TrashMap.module.css';
 import scheduleStyles from '../styles/WasteSchedule.module.css';
 import ScheduleResultCard from '../components/ScheduleResultCard';
 import { useWasteItemSearch, WasteItemSearchBox, WasteItemResults } from '../components/WasteItemSearch';
-import { fetchRegions, fetchTrashbinsByRegion, fetchNearbyTrashbins } from '../api/trashbinApi';
+import {
+  fetchRegions,
+  fetchTrashbinsByRegion,
+  fetchNearbyTrashbins,
+  fetchRecyclingCentersByRegion,
+  fetchNearbyRecyclingCenters,
+} from '../api/trashbinApi';
 import { fetchSchedule, fetchRegions as fetchScheduleRegions } from '../api/wasteScheduleApi';
 import { filterValidBins } from '../utils/trashbinUtils';
 import { fitBoundsToBins, centerMapOnLocation, zoomIntoCluster, geocodeAddress } from '../utils/kakaoMapUtils';
@@ -23,6 +29,30 @@ function TrashBinIcon({ open }) {
       <rect x="6" y="9" width="12" height="12" rx="1.5" fill={color} style={fillTransition} />
       <line x1="9.5" y1="12" x2="9.5" y2="18" stroke="#fff" strokeWidth="1" opacity="0.6" />
       <line x1="14.5" y1="12" x2="14.5" y2="18" stroke="#fff" strokeWidth="1" opacity="0.6" />
+      <g
+        transform={open ? 'rotate(-25 5 7.5)' : 'rotate(0 5 7.5)'}
+        style={{ transition: 'transform 0.25s ease' }}
+      >
+        <rect x="4" y="6" width="16" height="3" rx="1" fill={color} style={fillTransition} />
+        <rect x="10" y="4" width="4" height="2" rx="1" fill={color} style={fillTransition} />
+      </g>
+    </svg>
+  );
+}
+
+// 재활용센터는 파란색 통 + 흰색 순환 화살표로 일반 휴지통과 구분. 클릭하면 뚜껑이 열리며 더 진한 파란색으로 강조됨
+function RecyclingBinIcon({ open }) {
+  const color = open ? '#0d47a1' : '#1e88e5';
+  const fillTransition = { transition: 'fill 0.25s ease' };
+  return (
+    <svg width="36" height="36" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <rect x="6" y="9" width="12" height="12" rx="1.5" fill={color} style={fillTransition} />
+      <g fill="none" stroke="#fff" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12.4 12.43 A2.6 2.6 0 0 1 12.4 17.57" />
+        <path d="M13.3 16.8 L12.4 17.57 L13.3 18.4" />
+        <path d="M11.6 17.57 A2.6 2.6 0 0 1 11.6 12.43" />
+        <path d="M10.7 11.6 L11.6 12.43 L10.7 13.2" />
+      </g>
       <g
         transform={open ? 'rotate(-25 5 7.5)' : 'rotate(0 5 7.5)'}
         style={{ transition: 'transform 0.25s ease' }}
@@ -97,6 +127,10 @@ function TrashMap() {
   const [regions, setRegions] = useState([]);
   const [selectedSido, setSelectedSido] = useState('부산광역시');
   const [bins, setBins] = useState([]);
+  const [centers, setCenters] = useState([]);
+  // 범례에서 일반 휴지통 / 재활용센터를 각각 켜고 끌 수 있음
+  const [showGeneral, setShowGeneral] = useState(true);
+  const [showRecycle, setShowRecycle] = useState(true);
   const [myLocation, setMyLocation] = useState(null);
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState('');
@@ -121,9 +155,18 @@ function TrashMap() {
 
   // 레벨 숫자가 클수록 더 축소된 상태 → 많이 축소했을 때만 클러스터로 묶어서 표시
   const isClustered = zoomLevel >= CLUSTER_ZOOM_LEVEL;
+  const visibleBins = useMemo(() => (showGeneral ? bins : []), [bins, showGeneral]);
+  const visibleCenters = useMemo(() => (showRecycle ? centers : []), [centers, showRecycle]);
+  // 일반 휴지통과 재활용센터는 따로 묶어서 클러스터 색으로도 구분되게 함
   const clusters = useMemo(
-    () => (isClustered ? clusterBins(bins, zoomLevel) : []),
-    [bins, zoomLevel, isClustered]
+    () =>
+      isClustered
+        ? [
+            ...clusterBins(visibleBins, zoomLevel).map((c) => ({ ...c, kind: 'general' })),
+            ...clusterBins(visibleCenters, zoomLevel).map((c) => ({ ...c, kind: 'recycle' })),
+          ]
+        : [],
+    [visibleBins, visibleCenters, zoomLevel, isClustered]
   );
 
   useEffect(() => {
@@ -138,6 +181,9 @@ function TrashMap() {
     if (myLocation) return;
     fetchTrashbinsByRegion(selectedSido)
       .then((data) => setBins(filterValidBins(data)))
+      .catch(console.error);
+    fetchRecyclingCentersByRegion(selectedSido)
+      .then((data) => setCenters(filterValidBins(data)))
       .catch(console.error);
   }, [selectedSido, myLocation]);
 
@@ -226,6 +272,10 @@ function TrashMap() {
     fetchNearbyTrashbins(location[0], location[1], radiusKm)
       .then((data) => setBins(filterValidBins(data)))
       .catch(console.error);
+    // 재활용센터는 휴지통보다 훨씬 드물어서 더 넓은 반경으로 찾음
+    fetchNearbyRecyclingCenters(location[0], location[1], Math.max(radiusKm * 3, 5))
+      .then((data) => setCenters(filterValidBins(data)))
+      .catch(console.error);
   }
 
   function handleSelectRegion(option) {
@@ -274,6 +324,9 @@ function TrashMap() {
       .then((location) => {
         setMyLocation(location);
         setLocating(false);
+        fetchNearbyRecyclingCenters(location[0], location[1], 5)
+          .then((data) => setCenters(filterValidBins(data)))
+          .catch(console.error);
         return fetchNearbyTrashbins(location[0], location[1], 1);
       })
       .then(setBins)
@@ -336,7 +389,26 @@ function TrashMap() {
               지역별로 보기
             </button>
           </div>
-          <div className={styles.binCount}>휴지통 {bins.length}개</div>
+          <div className={styles.legend}>
+            <button
+              type="button"
+              className={`${styles.legendItem} ${showGeneral ? '' : styles.legendItemOff}`}
+              onClick={() => setShowGeneral((v) => !v)}
+              aria-pressed={showGeneral}
+            >
+              <span className={`${styles.legendDot} ${styles.legendDotGeneral}`} />
+              일반 휴지통 {bins.length}개
+            </button>
+            <button
+              type="button"
+              className={`${styles.legendItem} ${showRecycle ? '' : styles.legendItemOff}`}
+              onClick={() => setShowRecycle((v) => !v)}
+              aria-pressed={showRecycle}
+            >
+              <span className={`${styles.legendDot} ${styles.legendDotRecycle}`} />
+              재활용센터 {centers.length}개
+            </button>
+          </div>
           {locationError && <div className={styles.errorText}>{locationError}</div>}
         </div>
 
@@ -359,29 +431,57 @@ function TrashMap() {
 
             {isClustered
               ? clusters.map((cluster, idx) => (
-                  <CustomOverlayMap key={idx} position={{ lat: cluster.lat, lng: cluster.lng }} clickable>
-                    <div className={styles.clusterIcon} onClick={() => handleClusterClick(cluster)}>
+                  <CustomOverlayMap
+                    key={`${cluster.kind}-${idx}`}
+                    position={{ lat: cluster.lat, lng: cluster.lng }}
+                    clickable
+                  >
+                    <div
+                      className={`${styles.clusterIcon} ${cluster.kind === 'recycle' ? styles.clusterIconRecycle : ''}`}
+                      onClick={() => handleClusterClick(cluster)}
+                    >
                       <span className={styles.clusterCount}>{cluster.count}</span>
                     </div>
                   </CustomOverlayMap>
                 ))
-              : bins.map((bin, idx) => (
-                  <CustomOverlayMap
-                    key={idx}
-                    position={{ lat: parseFloat(bin.위도), lng: parseFloat(bin.경도) }}
-                    clickable
-                  >
-                    <div
-                      className={`${styles.binIcon} ${selectedBin === bin ? styles.binIconSelected : ''}`}
-                      onClick={() => {
-                        setPickedRegion(null);
-                        setSelectedBin(bin);
-                      }}
+              : [
+                  ...visibleBins.map((bin, idx) => (
+                    <CustomOverlayMap
+                      key={`general-${idx}`}
+                      position={{ lat: parseFloat(bin.위도), lng: parseFloat(bin.경도) }}
+                      clickable
                     >
-                      <TrashBinIcon open={selectedBin === bin} />
-                    </div>
-                  </CustomOverlayMap>
-                ))}
+                      <div
+                        className={`${styles.binIcon} ${selectedBin === bin ? styles.binIconSelected : ''}`}
+                        onClick={() => {
+                          setPickedRegion(null);
+                          setSelectedBin(bin);
+                        }}
+                      >
+                        <TrashBinIcon open={selectedBin === bin} />
+                      </div>
+                    </CustomOverlayMap>
+                  )),
+                  // 재활용센터는 일반 휴지통 위에 그려서 겹쳐도 가려지지 않게 함
+                  ...visibleCenters.map((center, idx) => (
+                    <CustomOverlayMap
+                      key={`recycle-${idx}`}
+                      position={{ lat: parseFloat(center.위도), lng: parseFloat(center.경도) }}
+                      clickable
+                      zIndex={2}
+                    >
+                      <div
+                        className={`${styles.binIcon} ${selectedBin === center ? styles.binIconSelected : ''}`}
+                        onClick={() => {
+                          setPickedRegion(null);
+                          setSelectedBin(center);
+                        }}
+                      >
+                        <RecyclingBinIcon open={selectedBin === center} />
+                      </div>
+                    </CustomOverlayMap>
+                  )),
+                ]}
           </Map>
         </div>
       </div>
@@ -497,11 +597,27 @@ function TrashMap() {
                   <div className={styles.panelResultHeader}>
                     {selectedBin ? (
                       <div>
-                        <h3 className={styles.panelTitle}>{selectedBin.설치장소명 || '휴지통'}</h3>
+                        {selectedBin.시설구분 === '재활용' ? (
+                          <>
+                            <span className={styles.kindBadgeRecycle}>재활용센터</span>
+                            <h3 className={styles.panelTitle}>{selectedBin.시설명 || '재활용센터'}</h3>
+                          </>
+                        ) : (
+                          <>
+                            <span className={styles.kindBadgeGeneral}>일반 휴지통</span>
+                            <h3 className={styles.panelTitle}>{selectedBin.설치장소명 || '휴지통'}</h3>
+                          </>
+                        )}
                         <p className={styles.panelMeta}>
                           {selectedBin.소재지도로명주소 || selectedBin.소재지지번주소}
                         </p>
-                        <p className={styles.panelMeta}>종류: {selectedBin.휴지통종류}</p>
+                        {selectedBin.휴지통종류 && (
+                          <p className={styles.panelMeta}>종류: {selectedBin.휴지통종류}</p>
+                        )}
+                        {selectedBin.전화번호 && <p className={styles.panelMeta}>전화: {selectedBin.전화번호}</p>}
+                        {selectedBin.운영시간 && (
+                          <p className={styles.panelMeta}>운영시간: {selectedBin.운영시간}</p>
+                        )}
                         {selectedBin.distance !== undefined && (
                           <p className={styles.panelMeta}>
                             거리: 약 {(selectedBin.distance * 1000).toFixed(0)}m

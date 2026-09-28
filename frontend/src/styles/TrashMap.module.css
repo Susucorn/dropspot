@@ -67,6 +67,76 @@
   color: #2e7d32;
 }
 
+/* 재활용센터 클러스터는 파란 테두리/숫자로 일반 휴지통 클러스터와 구분 */
+.clusterIconRecycle {
+  border-color: #1e88e5;
+}
+
+.clusterIconRecycle .clusterCount {
+  color: #1e88e5;
+}
+
+/* 상단 바의 범례: 누르면 해당 종류의 마커를 켜고 끔 */
+.legend {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid #e5e4e7;
+  border-radius: 12px;
+  background: #fff;
+  font-size: 13px;
+  color: #444;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.legendItemOff {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+
+.legendDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.legendDotGeneral {
+  background: #4a4a4a;
+}
+
+.legendDotRecycle {
+  background: #1e88e5;
+}
+
+.kindBadgeGeneral,
+.kindBadgeRecycle {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.kindBadgeGeneral {
+  background: #eeeeee;
+  color: #4a4a4a;
+}
+
+.kindBadgeRecycle {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
 /* 지도 위에 겹치는 오버레이 대신, 지도 영역 상단에 실제 공간을 차지하는 가로 바로 배치 */
 .controlPanel {
   flex-shrink: 0;

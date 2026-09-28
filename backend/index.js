@@ -60,6 +60,123 @@ app.get('/api/trashbins/nearby', (req, res) => {
   res.json(nearby);
 });
 
+// ── 재활용센터 데이터 (전국재활용센터표준데이터 공공 API, 서버 시작 시 한 번만 불러와 캐싱) ──
+// 휴지통 데이터와 같은 모양(위도/경도/시도명/시군구명)으로 정규화해서 프론트에서 같이 다룰 수 있게 함
+let recyclingCenterData = [];
+
+// 표준데이터 API는 항목명이 문서/버전마다 조금씩 달라서 후보 이름을 차례로 확인함
+function pickField(item, candidates, pattern) {
+  for (const key of candidates) {
+    if (item[key] !== undefined && item[key] !== null && String(item[key]).trim() !== '') {
+      return String(item[key]).trim();
+    }
+  }
+  if (pattern) {
+    const key = Object.keys(item).find((k) => pattern.test(k) && String(item[k] ?? '').trim() !== '');
+    if (key) return String(item[key]).trim();
+  }
+  return '';
+}
+
+function normalizeRecyclingCenter(item) {
+  const 도로명주소 = pickField(item, ['rdnmadr', 'rdnmAdr', 'roadNmAddr']);
+  const 지번주소 = pickField(item, ['lnmadr', 'lnmAdr', 'lotnoAddr']);
+  const [시도명 = '', 시군구명 = ''] = (도로명주소 || 지번주소).split(/\s+/);
+  return {
+    시설구분: '재활용',
+    시설명: pickField(item, ['ruseCnterNm', 'rcyclCnterNm', 'rcyclCntrNm', 'cnterNm'], /(Cnter|Cntr).*Nm$/i),
+    소재지도로명주소: 도로명주소,
+    소재지지번주소: 지번주소,
+    위도: pickField(item, ['latitude', 'lat']),
+    경도: pickField(item, ['longitude', 'lot', 'lng']),
+    시도명,
+    시군구명,
+    전화번호: pickField(item, ['phoneNumber', 'operInstitutionTelno', 'telno'], /Telno$|phone/i),
+    운영시간: pickField(item, ['operTime', 'operHour'], /oper.*(Time|Hour|Hm)/i),
+  };
+}
+
+async function loadRecyclingCenterData() {
+  // 공공데이터포털 인증키는 계정 단위라, 전용 키가 없으면 기존 키를 그대로 사용
+  const serviceKey =
+    process.env.RECYCLING_CENTER_SERVICE_KEY ||
+    process.env.HOUSEHOLD_WASTE_SERVICE_KEY ||
+    process.env.WASTE_ITEM_SERVICE_KEY;
+  if (!serviceKey) {
+    console.error('❌ 재활용센터 API 인증키가 .env에 없어요!');
+    return;
+  }
+
+  const numOfRows = 1000;
+  let pageNo = 1;
+  let all = [];
+  let totalCount = Infinity;
+
+  while (all.length < totalCount) {
+    const query = new URLSearchParams({
+      serviceKey,
+      pageNo: String(pageNo),
+      numOfRows: String(numOfRows),
+      type: 'json',
+    });
+    const response = await fetch(`https://api.data.go.kr/openapi/tn_pubr_public_ruse_cnter_api?${query}`);
+    const text = await response.text();
+
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      console.error('❌ 재활용센터 API 응답이 JSON이 아니에요:', text.slice(0, 300));
+      break;
+    }
+
+    if (pageNo === 1) {
+      console.log('🔍 재활용센터 API 응답 확인:', JSON.stringify(data).slice(0, 500));
+    }
+
+    const body = data?.response?.body;
+    if (!body) {
+      console.error('❌ 재활용센터 body가 없어요. 응답 헤더:', data?.response?.header);
+      break;
+    }
+    totalCount = Number(body.totalCount) || 0;
+    // 표준데이터 API는 items가 바로 배열이지만, 다른 API처럼 items.item 형태일 수도 있어 둘 다 처리
+    const rawItems = Array.isArray(body.items) ? body.items : body.items?.item || [];
+    const items = Array.isArray(rawItems) ? rawItems : [rawItems];
+    if (items.length === 0) break;
+    all = all.concat(items);
+    pageNo++;
+  }
+
+  recyclingCenterData = all
+    .map(normalizeRecyclingCenter)
+    .filter((r) => !isNaN(parseFloat(r.위도)) && !isNaN(parseFloat(r.경도)));
+  console.log(`재활용센터 데이터 ${recyclingCenterData.length}건 로드 완료 (원본 ${all.length}건)`);
+}
+
+app.get('/api/recycling-centers', (req, res) => {
+  const { sido } = req.query;
+  if (!sido) return res.json(recyclingCenterData);
+  res.json(recyclingCenterData.filter((r) => r.시도명 === sido));
+});
+
+app.get('/api/recycling-centers/nearby', (req, res) => {
+  const userLat = parseFloat(req.query.lat);
+  const userLng = parseFloat(req.query.lng);
+  const radius = parseFloat(req.query.radius) || 5;
+
+  if (isNaN(userLat) || isNaN(userLng)) {
+    return res.status(400).json({ error: '위치 정보가 필요합니다.' });
+  }
+
+  const nearby = recyclingCenterData
+    .map((r) => ({ ...r, distance: getDistance(userLat, userLng, parseFloat(r.위도), parseFloat(r.경도)) }))
+    .filter((r) => r.distance <= radius)
+    .sort((a, b) => a.distance - b.distance);
+
+  res.json(nearby);
+});
+
 // ── 배출 규칙 데이터 (공공 API, 서버 시작 시 한 번만 불러와 캐싱) ──
 let wasteScheduleData = [];
 
@@ -234,9 +351,11 @@ app.get('/api/waste-spots', async (req, res) => {
   }
 });
 
-// ── 서버 시작: 배출 규칙 데이터 로드 후 실행 (몇 초 걸릴 수 있어요) ──
-loadWasteScheduleData()
-  .catch((err) => console.error('배출 규칙 데이터 로드 실패:', err))
+// ── 서버 시작: 배출 규칙 + 재활용센터 데이터 로드 후 실행 (몇 초 걸릴 수 있어요) ──
+Promise.all([
+  loadWasteScheduleData().catch((err) => console.error('배출 규칙 데이터 로드 실패:', err)),
+  loadRecyclingCenterData().catch((err) => console.error('재활용센터 데이터 로드 실패:', err)),
+])
   .finally(() => {
     app.listen(process.env.PORT || 4000, () => {
       console.log('서버 실행 중: http://localhost:4000');

@@ -13,3 +13,14 @@ export function fetchNearbyTrashbins(lat, lng, radius = 1) {
     res.json()
   );
 }
+
+// 재활용센터(전국재활용센터표준데이터): 휴지통과 같은 위도/경도/시도명/시군구명 필드로 내려옴
+export function fetchRecyclingCentersByRegion(sido) {
+  return fetch(`${BASE_URL}/api/recycling-centers?sido=${encodeURIComponent(sido)}`).then((res) => res.json());
+}
+
+export function fetchNearbyRecyclingCenters(lat, lng, radius = 5) {
+  return fetch(`${BASE_URL}/api/recycling-centers/nearby?lat=${lat}&lng=${lng}&radius=${radius}`).then((res) =>
+    res.json()
+  );
+}
