@@ -79,28 +79,28 @@ function parseDays(dowStr) {
   return dowStr.split('+').map((d) => d.trim()).filter(Boolean);
 }
 
-// 배출 규칙 한 건의 품목별(음식물/일반/재활용) 요일·시간·방법 정보
+// 배출 규칙 한 건의 품목별(음식물/일반/재활용) 요일·시간·방법 정보 (시간은 "HH:MM"으로 통일, 알 수 없으면 null)
 export function getScheduleCategories(r) {
   return [
     {
       name: '음식물쓰레기',
       dow: r.FOD_WST_EMSN_DOW,
-      begin: r.FOD_WST_EMSN_BGNG_TM,
-      end: r.FOD_WST_EMSN_END_TM,
+      begin: normalizeTime(r.FOD_WST_EMSN_BGNG_TM),
+      end: normalizeTime(r.FOD_WST_EMSN_END_TM),
       method: r.FOD_WST_EMSN_MTHD,
     },
     {
       name: '일반쓰레기',
       dow: r.LF_WST_EMSN_DOW,
-      begin: r.LF_WST_EMSN_BGNG_TM,
-      end: r.LF_WST_EMSN_END_TM,
+      begin: normalizeTime(r.LF_WST_EMSN_BGNG_TM),
+      end: normalizeTime(r.LF_WST_EMSN_END_TM),
       method: r.LF_WST_EMSN_MTHD,
     },
     {
       name: '재활용품',
       dow: r.RCYCL_EMSN_DOW,
-      begin: r.RCYCL_EMSN_BGNG_TM,
-      end: r.RCYCL_EMSN_END_TM,
+      begin: normalizeTime(r.RCYCL_EMSN_BGNG_TM),
+      end: normalizeTime(r.RCYCL_EMSN_END_TM),
       method: r.RCYCL_EMSN_MTHD,
     },
   ].filter((cat) => isValid(cat.method));
@@ -116,6 +116,19 @@ function toMinutes(hhmm) {
   const match = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || '').trim());
   if (!match) return null;
   return Number(match[1]) * 60 + Number(match[2]);
+}
+
+// 배출 시간을 "HH:MM"으로 통일. 원본 데이터는 대부분 "20:00"이지만 일부(예: 경기 광명시)는
+// "2400", "2000"처럼 콜론 없이 들어와서, 그대로 두면 '오늘 배출'에서 시간 정보 없음으로 보였음.
+// 알아볼 수 없는 값이면 null
+export function normalizeTime(value) {
+  const text = String(value ?? '').trim();
+  const match = /^(\d{1,2}):?(\d{2})$/.exec(text);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 24 || minutes > 59) return null;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
 // 현재 시각 기준으로 품목별 배출 가능 여부를 계산.
