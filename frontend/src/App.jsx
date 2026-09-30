@@ -2,12 +2,16 @@ import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
 import TrashMap from './pages/TrashMap';
 import styles from './styles/App.module.css';
 
+// 흰색 쓰레기통 위에 새싹 잎을 얹은 로고 (초록 배지 안에 표시)
 function LogoIcon() {
   return (
-    <svg width="26" height="26" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-      <rect x="6" y="9" width="12" height="12" rx="1.5" fill="#4caf50" />
-      <rect x="4" y="6" width="16" height="3" rx="1" fill="#4caf50" />
-      <rect x="10" y="4" width="4" height="2" rx="1" fill="#4caf50" />
+    <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <rect x="6" y="11" width="12" height="10" rx="1.5" fill="#fff" />
+      <rect x="4.5" y="8.5" width="15" height="2.5" rx="1" fill="#fff" />
+      <path d="M12 8.5 C12 5.5 13.8 3.5 17 3.5 C17 6.5 15.2 8.5 12 8.5 Z" fill="#c5e8b7" />
+      <path d="M12 8.5 C12 6.3 10.7 4.8 8.2 4.8 C8.2 7 9.5 8.5 12 8.5 Z" fill="#e3f4da" />
+      <line x1="10" y1="13.5" x2="10" y2="18.5" stroke="#43a047" strokeWidth="1" strokeLinecap="round" opacity="0.5" />
+      <line x1="14" y1="13.5" x2="14" y2="18.5" stroke="#43a047" strokeWidth="1" strokeLinecap="round" opacity="0.5" />
     </svg>
   );
 }
@@ -42,8 +46,15 @@ function App() {
       <div className={styles.appShell}>
         <header className={styles.header}>
           <div className={styles.brand}>
-            <LogoIcon />
-            <span className={styles.brandName}>DropSpot</span>
+            <span className={styles.logoBadge}>
+              <LogoIcon />
+            </span>
+            <div className={styles.brandText}>
+              <span className={styles.brandName}>
+                Drop<span className={styles.brandAccent}>Spot</span>
+              </span>
+              <span className={styles.brandTagline}>내 주변 쓰레기통 찾고, 올바르게 분리배출해요</span>
+            </div>
           </div>
 
           <div className={styles.headerActions}>
