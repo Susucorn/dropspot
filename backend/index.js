@@ -447,12 +447,26 @@ app.get('/api/waste-schedule', (req, res) => {
 // ── 분리배출 정보조회 서비스 (기후에너지환경부, 실시간 프록시) ──
 const WASTE_ITEM_BASE_URL = 'https://apis.data.go.kr/1482000/WasteRecyclingService';
 
+// 공공데이터포털 인증키는 계정 단위라 보통 두 키가 같은 값. WASTE_ITEM_SERVICE_KEY가 없거나
+// 거절되면(예: 배포 환경에 잘못 입력) HOUSEHOLD_WASTE_SERVICE_KEY로 한 번 더 시도함
 async function callWasteRecyclingApi(operation, params) {
-  const serviceKey = process.env.WASTE_ITEM_SERVICE_KEY;
-  if (!serviceKey) {
+  const keys = [...new Set([process.env.WASTE_ITEM_SERVICE_KEY, process.env.HOUSEHOLD_WASTE_SERVICE_KEY].filter(Boolean))];
+  if (keys.length === 0) {
     throw Object.assign(new Error('WASTE_ITEM_SERVICE_KEY가 .env에 없어요!'), { status: 500 });
   }
 
+  let lastError;
+  for (const serviceKey of keys) {
+    try {
+      return await requestWasteRecyclingApi(operation, params, serviceKey);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError;
+}
+
+async function requestWasteRecyclingApi(operation, params, serviceKey) {
   const query = new URLSearchParams({
     serviceKey,
     pageNo: '1',
@@ -461,13 +475,21 @@ async function callWasteRecyclingApi(operation, params) {
     ...params,
   });
   const response = await fetch(`${WASTE_ITEM_BASE_URL}/${operation}?${query.toString()}`);
-  const data = await response.json();
+  const text = await response.text();
+  let data = null;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    // XML 오류 응답 등은 아래에서 원문 일부를 로그로 남김
+  }
 
   const header = data?.response?.header;
   if (!header || (header.resultCode !== '00' && header.resultCode !== '03')) {
-    throw Object.assign(new Error(header?.resultMsg || '분리배출 정보를 불러오지 못했어요.'), {
-      status: 502,
-    });
+    // 인증키 오류는 { OpenAPI_ServiceResponse: { cmmMsgHeader: { returnAuthMsg } } } 형태로 옴
+    const authMsg = data?.OpenAPI_ServiceResponse?.cmmMsgHeader?.returnAuthMsg;
+    const reason = header?.resultMsg || authMsg || `HTTP ${response.status}`;
+    console.error(`❌ 분리배출 정보조회 실패 (${reason}):`, text.slice(0, 200));
+    throw Object.assign(new Error(`분리배출 정보를 불러오지 못했어요. (${reason})`), { status: 502 });
   }
 
   const items = data.response.body?.items?.item || [];
