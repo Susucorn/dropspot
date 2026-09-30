@@ -3,6 +3,7 @@ import { Map, CustomOverlayMap, useKakaoLoader } from 'react-kakao-maps-sdk';
 import styles from '../styles/TrashMap.module.css';
 import scheduleStyles from '../styles/WasteSchedule.module.css';
 import ScheduleResultCard from '../components/ScheduleResultCard';
+import ReportModal from '../components/ReportModal';
 import { useWasteItemSearch, WasteItemSearchBox, WasteItemResults } from '../components/WasteItemSearch';
 import {
   fetchRegions,
@@ -196,6 +197,8 @@ function TrashMap() {
   const [activeTab, setActiveTab] = useState('schedule');
   const itemSearch = useWasteItemSearch();
   const [panelCollapsed, setPanelCollapsed] = useState(false);
+  // 신고 폼에 넘길 { location, manager }. null이면 폼이 닫힌 상태
+  const [reportTarget, setReportTarget] = useState(null);
 
   // 레벨 숫자가 클수록 더 축소된 상태 → 많이 축소했을 때만 클러스터로 묶어서 표시
   const isClustered = zoomLevel >= CLUSTER_ZOOM_LEVEL;
@@ -345,6 +348,34 @@ function TrashMap() {
 
     const center = map.getCenter();
     getSidoFromCoords(center.getLat(), center.getLng()).then(setSelectedSido).catch(console.error);
+  }
+
+  // 신고 폼을 열면서 위치를 자동으로 채움: 쓰레기통을 선택했으면 그 쓰레기통 정보,
+  // 지역 검색 중이면 검색한 지역 이름 + 현재 지도 중심 좌표를 사용
+  function openReport(record) {
+    let location;
+    if (selectedBin) {
+      location = {
+        name: selectedBin.시설명 || selectedBin.설치장소명 || '',
+        address: selectedBin.소재지도로명주소 || selectedBin.소재지지번주소 || '',
+        region: `${selectedBin.시도명} ${selectedBin.시군구명}`,
+        lat: parseFloat(selectedBin.위도),
+        lng: parseFloat(selectedBin.경도),
+      };
+    } else {
+      const center = mapRef.current?.getCenter();
+      location = {
+        name: '',
+        address: pickedRegion.label,
+        region: `${pickedRegion.ctpv} ${pickedRegion.sgg}`,
+        lat: center ? center.getLat() : undefined,
+        lng: center ? center.getLng() : undefined,
+      };
+    }
+    setReportTarget({
+      location,
+      manager: { name: record.MNG_DEPT_NM || '', tel: record.MNG_DEPT_TELNO || '' },
+    });
   }
 
   function handleClusterClick(cluster) {
@@ -808,6 +839,7 @@ function TrashMap() {
                       key={idx}
                       title={`${scheduleResults.length > 1 ? `${idx + 1}. ` : ''}${getScheduleCardTitle(r)}`}
                       record={r}
+                      onReport={openReport}
                     />
                   ))}
                 </>
@@ -837,6 +869,14 @@ function TrashMap() {
         )}
         </div>
       </div>
+
+      {reportTarget && (
+        <ReportModal
+          location={reportTarget.location}
+          manager={reportTarget.manager}
+          onClose={() => setReportTarget(null)}
+        />
+      )}
     </div>
   );
 }

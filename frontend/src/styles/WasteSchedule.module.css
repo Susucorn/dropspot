@@ -283,6 +283,59 @@
   margin: 0;
 }
 
+.reportButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 11px 14px;
+  border: 1.5px solid #43a047;
+  border-radius: 10px;
+  background: #f1f8f1;
+  color: #2e7d32;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.reportButton:hover {
+  background: #e3f2e4;
+}
+
+/* 관리 부서 연락처: 카드 맨 아래에 구분선과 함께 작게 표시 */
+.managerContact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed #e0e0e0;
+  font-size: 12px;
+}
+
+.managerLabel {
+  font-weight: 700;
+  color: #666;
+}
+
+.managerText {
+  color: #444;
+}
+
+.managerTel {
+  color: #2e7d32;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.managerTel:hover {
+  text-decoration: underline;
+}
+
 .section {
   margin-bottom: 24px;
 }

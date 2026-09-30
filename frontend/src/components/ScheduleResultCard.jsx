@@ -8,9 +8,9 @@ const CATEGORY_META = {
   재활용품: { icon: '♻️', className: 'catRecycle' },
 };
 
-// 배출 규칙 한 건을 요일별 카드 + 대형폐기물/미수거일/문의처 박스로 보여주는 공용 카드
-// (배출 규칙 안내 페이지, 지도 옆 패널 양쪽에서 재사용)
-function ScheduleResultCard({ title, record }) {
+// 배출 규칙 한 건을 요일별 카드 + 대형폐기물/미수거일 박스로 보여주는 공용 카드.
+// onReport를 넘기면 '쓰레기통 신고하기' 버튼을 보여주고, 관리 부서 연락처는 카드 맨 아래에 따로 표시
+function ScheduleResultCard({ title, record, onReport }) {
   const rows = buildWeeklyRows(record);
 
   return (
@@ -70,15 +70,26 @@ function ScheduleResultCard({ title, record }) {
         </div>
       )}
 
-      {record.MNG_DEPT_NM && (
-        <div className={styles.infoBox}>
-          <span className={styles.infoBoxIcon}>📞</span>
-          <div>
-            <p className={styles.infoBoxLabel}>문의처</p>
-            <p className={styles.infoBoxText}>
-              {record.MNG_DEPT_NM} {record.MNG_DEPT_TELNO}
-            </p>
-          </div>
+      {onReport && (
+        <button type="button" className={styles.reportButton} onClick={() => onReport(record)}>
+          <span aria-hidden="true">🚩</span> 쓰레기통 신고하기
+        </button>
+      )}
+
+      {(record.MNG_DEPT_NM || record.MNG_DEPT_TELNO) && (
+        <div className={styles.managerContact}>
+          <span className={styles.managerLabel}>관리자 연락처</span>
+          <span className={styles.managerText}>
+            {record.MNG_DEPT_NM}
+            {record.MNG_DEPT_TELNO && (
+              <>
+                {' · '}
+                <a className={styles.managerTel} href={`tel:${record.MNG_DEPT_TELNO.replace(/[^0-9+]/g, '')}`}>
+                  {record.MNG_DEPT_TELNO}
+                </a>
+              </>
+            )}
+          </span>
         </div>
       )}
     </div>

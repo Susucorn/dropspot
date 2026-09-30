@@ -1,3 +1,6 @@
 node_modules/
 .env
 dist/
+# 사용자가 보낸 쓰레기통 신고 내용/사진 (개인 사진이 포함될 수 있어 저장소에 올리지 않음)
+backend/data/reports.json
+backend/uploads/

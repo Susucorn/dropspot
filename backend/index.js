@@ -414,6 +414,82 @@ app.get('/api/waste-spots', async (req, res) => {
   }
 });
 
+// ── 쓰레기통 신고 접수 (사진은 base64로 받아 파일로 저장, 신고 내용은 JSON 파일에 누적) ──
+const REPORT_STATUSES = ['파손', '없음', '이동됨', '가득 참', '오염', '기타'];
+const REPORT_MAX_PHOTOS = 3;
+const REPORT_MAX_PHOTO_BYTES = 5 * 1024 * 1024;
+const REPORTS_FILE = path.join(__dirname, 'data', 'reports.json');
+const REPORT_UPLOAD_DIR = path.join(__dirname, 'uploads', 'reports');
+const PHOTO_EXTENSIONS = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
+
+function readReports() {
+  if (!fs.existsSync(REPORTS_FILE)) return [];
+  return JSON.parse(fs.readFileSync(REPORTS_FILE, 'utf-8'));
+}
+
+// "data:image/png;base64,...." 형태의 사진을 검사해서 { ext, buffer }로 변환. 형식이 잘못되면 에러
+function decodePhoto(dataUrl) {
+  const match = /^data:(image\/[a-z]+);base64,(.+)$/.exec(dataUrl || '');
+  const ext = match && PHOTO_EXTENSIONS[match[1]];
+  if (!ext) throw Object.assign(new Error('사진은 JPG, PNG, WEBP, GIF만 첨부할 수 있어요.'), { status: 400 });
+  const buffer = Buffer.from(match[2], 'base64');
+  if (buffer.length > REPORT_MAX_PHOTO_BYTES) {
+    throw Object.assign(new Error('사진 한 장은 5MB 이하만 첨부할 수 있어요.'), { status: 400 });
+  }
+  return { ext, buffer };
+}
+
+app.post('/api/reports', express.json({ limit: '25mb' }), (req, res) => {
+  const { status, memo = '', location = {}, manager = {}, photos = [] } = req.body || {};
+
+  if (!REPORT_STATUSES.includes(status)) {
+    return res.status(400).json({ error: '쓰레기통 상태를 선택해주세요.' });
+  }
+  if (!location.address && !location.name) {
+    return res.status(400).json({ error: '신고 위치 정보가 필요해요.' });
+  }
+  if (!Array.isArray(photos) || photos.length > REPORT_MAX_PHOTOS) {
+    return res.status(400).json({ error: `사진은 최대 ${REPORT_MAX_PHOTOS}장까지 첨부할 수 있어요.` });
+  }
+
+  try {
+    // 사진을 모두 검사한 뒤에 저장해서, 중간에 실패하면 파일이 남지 않게 함
+    const decoded = photos.map(decodePhoto);
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    fs.mkdirSync(REPORT_UPLOAD_DIR, { recursive: true });
+    const photoFiles = decoded.map(({ ext, buffer }, i) => {
+      const fileName = `${id}-${i + 1}.${ext}`;
+      fs.writeFileSync(path.join(REPORT_UPLOAD_DIR, fileName), buffer);
+      return `uploads/reports/${fileName}`;
+    });
+
+    const report = {
+      id,
+      createdAt: new Date().toISOString(),
+      status,
+      memo: String(memo).slice(0, 500),
+      location: {
+        name: String(location.name || ''),
+        address: String(location.address || ''),
+        region: String(location.region || ''),
+        lat: Number(location.lat) || null,
+        lng: Number(location.lng) || null,
+      },
+      manager: { name: String(manager.name || ''), tel: String(manager.tel || '') },
+      photos: photoFiles,
+    };
+
+    const reports = readReports();
+    reports.push(report);
+    fs.writeFileSync(REPORTS_FILE, JSON.stringify(reports, null, 2), 'utf-8');
+    console.log(`🚩 쓰레기통 신고 접수: [${status}] ${report.location.name || report.location.address}`);
+    res.status(201).json({ id });
+  } catch (err) {
+    console.error('신고 저장 실패:', err);
+    res.status(err.status || 500).json({ error: err.status ? err.message : '신고를 저장하지 못했어요.' });
+  }
+});
+
 // ── 서버 시작: 배출 규칙 + 재활용센터 데이터 로드 후 실행 (몇 초 걸릴 수 있어요) ──
 Promise.all([
   loadWasteScheduleData().catch((err) => console.error('배출 규칙 데이터 로드 실패:', err)),
