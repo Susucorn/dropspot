@@ -162,6 +162,9 @@ const LEGEND_ITEMS = [
 // (재활용센터·의류수거함은 쓰레기통이 아니라서 기본으로는 숨기고, 범례에서 골랐을 때만 표시)
 const DEFAULT_VISIBLE_KINDS = ['general', 'recycle', 'both'];
 
+// 선택해도 오른쪽 패널에 배출 규칙(시간표)을 보여주지 않는 종류 (집 앞 배출 시간표와 관계없는 시설)
+const NO_SCHEDULE_KINDS = ['center', 'clothing'];
+
 // 휴지통과 같은 범위로 함께 불러오는 시설 데이터 (백엔드 경로, 반경 조회 시 넓혀서 찾을 반경)
 const FACILITY_TYPES = [
   // 재활용센터는 휴지통보다 훨씬 드물어서 더 넓게 찾음
@@ -398,8 +401,14 @@ function TrashMap() {
   }, [bins, myLocation, loading, pickedRegion]);
 
   // 휴지통 아이콘을 클릭하거나 지역을 검색해서 선택하면, 그 지역(시도/시군구, 필요시 동)의
-  // 배출 규칙을 오른쪽 패널에 조회
+  // 배출 규칙을 오른쪽 패널에 조회 (재활용센터·의류수거함은 배출 시간표를 보여주지 않으므로 조회하지 않음)
   useEffect(() => {
+    if (selectedBin && NO_SCHEDULE_KINDS.includes(getBinKind(selectedBin))) {
+      setScheduleResults([]);
+      setScheduleError('');
+      setScheduleLoading(false);
+      return;
+    }
     const ctpv = selectedBin ? selectedBin.시도명 : pickedRegion ? pickedRegion.ctpv : null;
     const sgg = selectedBin ? selectedBin.시군구명 : pickedRegion ? pickedRegion.sgg : null;
     const dong = selectedBin ? null : pickedRegion ? pickedRegion.dong || null : null;
@@ -629,6 +638,7 @@ function TrashMap() {
   if (error) return <div>지도를 불러오지 못했어요. 카카오 앱 키/도메인 등록을 확인해주세요.</div>;
 
   const hasSelection = Boolean(selectedBin || pickedRegion);
+  const hideSchedule = Boolean(selectedBin) && NO_SCHEDULE_KINDS.includes(getBinKind(selectedBin));
 
   return (
     <div className={styles.mapWrap}>
@@ -947,30 +957,34 @@ function TrashMap() {
                     </button>
                   </div>
 
-                  <hr className={styles.panelDivider} />
+                  {/* 재활용센터·의류수거함은 집 앞 배출 시간표와 관계없어서 시설 정보만 보여줌 */}
+                  {!hideSchedule && (
+                    <>
+                      <hr className={styles.panelDivider} />
 
-                  <h4 className={styles.panelSubtitle}>
-                    {selectedBin
-                      ? `${selectedBin.시도명} ${selectedBin.시군구명}`
-                      : `${pickedRegion.ctpv} ${pickedRegion.sgg}`}{' '}
-                    배출 규칙 안내
-                  </h4>
+                      <h4 className={styles.panelSubtitle}>
+                        {selectedBin
+                          ? `${selectedBin.시도명} ${selectedBin.시군구명}`
+                          : `${pickedRegion.ctpv} ${pickedRegion.sgg}`}{' '}
+                        배출 규칙 안내
+                      </h4>
 
-                  {scheduleLoading && <p>불러오는 중...</p>}
-                  {scheduleError && <p className={scheduleStyles.errorText}>{scheduleError}</p>}
-                  {!scheduleLoading && !scheduleError && scheduleResults.length === 0 && (
-                    <p>해당 지역 배출 규칙 정보가 없어요.</p>
+                      {scheduleLoading && <p>불러오는 중...</p>}
+                      {scheduleError && <p className={scheduleStyles.errorText}>{scheduleError}</p>}
+                      {!scheduleLoading && !scheduleError && scheduleResults.length === 0 && (
+                        <p>해당 지역 배출 규칙 정보가 없어요.</p>
+                      )}
+
+                      {scheduleResults.map((r, idx) => (
+                        <ScheduleResultCard
+                          key={idx}
+                          title={`${scheduleResults.length > 1 ? `${idx + 1}. ` : ''}${getScheduleCardTitle(r)}`}
+                          record={r}
+                          onReport={openReport}
+                        />
+                      ))}
+                    </>
                   )}
-
-                  {scheduleResults.map((r, idx) => (
-                    <ScheduleResultCard
-                      key={idx}
-                      title={`${scheduleResults.length > 1 ? `${idx + 1}. ` : ''}${getScheduleCardTitle(r)}`}
-                      record={r}
-                      // 재활용센터(건물)를 선택했을 때는 쓰레기통 신고 대상이 아니므로 신고 버튼을 숨김
-                      onReport={selectedBin && getBinKind(selectedBin) === 'center' ? undefined : openReport}
-                    />
-                  ))}
                 </>
               )}
             </div>
