@@ -1,4 +1,4 @@
-const BASE_URL = 'http://localhost:4000';
+import { BASE_URL } from '../api/config';
 
 export function fetchRegions() {
   return fetch(`${BASE_URL}/api/waste-schedule/regions`).then((res) => res.json());

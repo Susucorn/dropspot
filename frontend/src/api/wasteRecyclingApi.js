@@ -1,4 +1,4 @@
-const BASE_URL = 'http://localhost:4000';
+import { BASE_URL } from './config';
 
 async function getJson(url) {
   const res = await fetch(url);

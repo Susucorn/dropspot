@@ -1,4 +1,4 @@
-const BASE_URL = 'http://localhost:4000';
+import { BASE_URL } from './config';
 
 // 쓰레기통 신고 접수: { status, memo, location, manager, photos(dataURL 배열) }
 export async function submitTrashbinReport(report) {
