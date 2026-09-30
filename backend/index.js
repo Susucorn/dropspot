@@ -447,26 +447,12 @@ app.get('/api/waste-schedule', (req, res) => {
 // ── 분리배출 정보조회 서비스 (기후에너지환경부, 실시간 프록시) ──
 const WASTE_ITEM_BASE_URL = 'https://apis.data.go.kr/1482000/WasteRecyclingService';
 
-// 공공데이터포털 인증키는 계정 단위라 보통 두 키가 같은 값. WASTE_ITEM_SERVICE_KEY가 없거나
-// 거절되면(예: 배포 환경에 잘못 입력) HOUSEHOLD_WASTE_SERVICE_KEY로 한 번 더 시도함
 async function callWasteRecyclingApi(operation, params) {
-  const keys = [...new Set([process.env.WASTE_ITEM_SERVICE_KEY, process.env.HOUSEHOLD_WASTE_SERVICE_KEY].filter(Boolean))];
-  if (keys.length === 0) {
+  const serviceKey = process.env.WASTE_ITEM_SERVICE_KEY;
+  if (!serviceKey) {
     throw Object.assign(new Error('WASTE_ITEM_SERVICE_KEY가 .env에 없어요!'), { status: 500 });
   }
 
-  let lastError;
-  for (const serviceKey of keys) {
-    try {
-      return await requestWasteRecyclingApi(operation, params, serviceKey);
-    } catch (err) {
-      lastError = err;
-    }
-  }
-  throw lastError;
-}
-
-async function requestWasteRecyclingApi(operation, params, serviceKey) {
   const query = new URLSearchParams({
     serviceKey,
     pageNo: '1',
