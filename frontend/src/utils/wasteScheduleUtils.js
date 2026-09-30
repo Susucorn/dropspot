@@ -51,16 +51,23 @@ export function formatItemList(text) {
     .join(', ');
 }
 
-const DAYS = ['월', '화', '수', '목', '금', '토', '일'];
+export const DAYS = ['월', '화', '수', '목', '금', '토', '일'];
+
+// 품목별 아이콘/색상 클래스 (WasteSchedule.module.css의 클래스명, 없는 카테고리는 기본값으로 대체)
+export const CATEGORY_META = {
+  음식물쓰레기: { icon: '🍚', className: 'catFood' },
+  일반쓰레기: { icon: '🗑️', className: 'catGeneral' },
+  재활용품: { icon: '♻️', className: 'catRecycle' },
+};
 
 function parseDays(dowStr) {
   if (!dowStr) return [];
   return dowStr.split('+').map((d) => d.trim()).filter(Boolean);
 }
 
-// 카테고리별(음식물/일반/재활용) 데이터를 "요일별" 데이터로 뒤집어주는 함수
-export function buildWeeklyRows(r) {
-  const categories = [
+// 배출 규칙 한 건의 품목별(음식물/일반/재활용) 요일·시간·방법 정보
+export function getScheduleCategories(r) {
+  return [
     {
       name: '음식물쓰레기',
       dow: r.FOD_WST_EMSN_DOW,
@@ -82,7 +89,72 @@ export function buildWeeklyRows(r) {
       end: r.RCYCL_EMSN_END_TM,
       method: r.RCYCL_EMSN_MTHD,
     },
-  ];
+  ].filter((cat) => isValid(cat.method));
+}
+
+// Date의 요일을 DAYS 표기('월'~'일')로 변환 (getDay()는 일요일이 0)
+export function getDayName(date) {
+  return DAYS[(date.getDay() + 6) % 7];
+}
+
+// "20:00" → 1200(분). 형식이 다르면 null
+function toMinutes(hhmm) {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || '').trim());
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+// 현재 시각 기준으로 품목별 배출 가능 여부를 계산.
+// 반환: [{ name, status: 'now' | 'today' | 'later', text }] (지금 가능 → 오늘 이따가 → 다른 날 순)
+// "20:00~06:00"처럼 끝 시간이 시작보다 이르면 다음 날 아침까지 이어지는 것으로 봄
+// (예: 월요일 20:00~06:00이면 화요일 새벽 5시에도 배출 가능)
+export function getAvailability(record, now = new Date()) {
+  const todayIdx = DAYS.indexOf(getDayName(now));
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const STATUS_ORDER = { now: 0, today: 1, later: 2 };
+
+  return getScheduleCategories(record)
+    .map((cat) => {
+      const days = parseDays(cat.dow);
+      const allowed = days.length >= 7 ? DAYS : days;
+      const has = (offset) => allowed.includes(DAYS[(todayIdx + offset + 7) % 7]);
+      const begin = toMinutes(cat.begin);
+      const end = toMinutes(cat.end);
+
+      // 시간 정보가 없으면 요일만 보고 판단
+      if (begin === null || end === null) {
+        if (has(0)) return { name: cat.name, status: 'now', text: '오늘 배출 (시간 정보 없음)' };
+      } else {
+        const overnight = end <= begin;
+        const inTodayWindow = has(0) && nowMin >= begin && (overnight || nowMin < end);
+        const inYesterdayWindow = overnight && has(-1) && nowMin < end;
+        if (inTodayWindow || inYesterdayWindow) {
+          const endsTomorrow = inTodayWindow && overnight;
+          return { name: cat.name, status: 'now', text: `${endsTomorrow ? '내일 ' : ''}${cat.end}까지` };
+        }
+        if (has(0) && nowMin < begin) {
+          return { name: cat.name, status: 'today', text: `오늘 ${cat.begin}부터` };
+        }
+      }
+
+      for (let offset = 1; offset <= 7; offset += 1) {
+        if (has(offset)) {
+          const dayLabel = offset === 1 ? '내일' : `${DAYS[(todayIdx + offset) % 7]}요일`;
+          return {
+            name: cat.name,
+            status: 'later',
+            text: begin === null ? `${dayLabel} 배출` : `${dayLabel} ${cat.begin}부터`,
+          };
+        }
+      }
+      return { name: cat.name, status: 'later', text: '배출 요일 정보 없음' };
+    })
+    .sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
+}
+
+// 카테고리별(음식물/일반/재활용) 데이터를 "요일별" 데이터로 뒤집어주는 함수
+export function buildWeeklyRows(r) {
+  const categories = getScheduleCategories(r);
 
   const dayMap = {};
   DAYS.forEach((d) => {
@@ -90,7 +162,6 @@ export function buildWeeklyRows(r) {
   });
 
   categories.forEach((cat) => {
-    if (!isValid(cat.method)) return;
     const days = parseDays(cat.dow);
     const timeText = cat.begin && cat.end ? `${cat.begin}~${cat.end}` : '시간 정보 없음';
     const targetDays = days.length >= 7 ? DAYS : days;

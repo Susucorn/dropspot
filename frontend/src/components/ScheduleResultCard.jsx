@@ -1,80 +1,88 @@
+import { useEffect, useState } from 'react';
 import styles from '../styles/WasteSchedule.module.css';
-import { isValid, buildWeeklyRows, formatItemList } from '../utils/wasteScheduleUtils';
+import { getAvailability, getDayName, CATEGORY_META } from '../utils/wasteScheduleUtils';
+import FullScheduleView from './FullScheduleView';
 
-// 품목별 아이콘/색상 (없는 카테고리는 기본값으로 대체)
-const CATEGORY_META = {
-  음식물쓰레기: { icon: '🍚', className: 'catFood' },
-  일반쓰레기: { icon: '🗑️', className: 'catGeneral' },
-  재활용품: { icon: '♻️', className: 'catRecycle' },
-};
+// 1분마다 현재 시각을 갱신해서, 화면을 켜 둔 채로 시간이 지나도 '지금 배출 가능' 품목이 맞게 바뀌도록 함
+function useNow(intervalMs = 60 * 1000) {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return now;
+}
 
-// 배출 규칙 한 건을 요일별 카드 + 대형폐기물/미수거일 박스로 보여주는 공용 카드.
+// 배출 규칙 한 건을 보여주는 카드.
+// 상단에 현재 요일/시간 기준으로 '지금 배출 가능한 품목'을 강조하고, 요일별 전체 시간표와
+// 대형폐기물/미수거일 같은 상세 정보는 '전체 시간표 보기'를 누르면 새 화면(FullScheduleView)으로 보여줌.
 // onReport를 넘기면 '쓰레기통 신고하기' 버튼을 보여주고, 관리 부서 연락처는 카드 맨 아래에 따로 표시
 function ScheduleResultCard({ title, record, onReport }) {
-  const rows = buildWeeklyRows(record);
+  const now = useNow();
+  const [showFull, setShowFull] = useState(false);
+
+  const availability = getAvailability(record, now);
+  const availableNow = availability.filter((a) => a.status === 'now');
+  const upcoming = availability.filter((a) => a.status !== 'now');
+  const nowLabel = `${getDayName(now)}요일 ${String(now.getHours()).padStart(2, '0')}:${String(
+    now.getMinutes()
+  ).padStart(2, '0')}`;
 
   return (
     <div className={styles.card}>
       <p className={styles.cardTitle}>{title}</p>
 
-      <div className={styles.dayGrid}>
-        {rows.map((row) => (
-          <div key={row.day} className={styles.dayCard}>
-            <span className={styles.dayLabel}>{row.day}</span>
-            {row.items.length > 0 ? (
-              <div className={styles.itemBadgeList}>
-                {row.items.map((item, i) => {
-                  const meta = CATEGORY_META[item.name] || { icon: '❔', className: '' };
-                  return (
-                    <div key={i} className={`${styles.itemBadge} ${styles[meta.className] || ''}`}>
-                      <span className={styles.itemHeader}>
-                        <span className={styles.itemIcon}>{meta.icon}</span>
-                        <span className={styles.itemName}>{item.name}</span>
-                      </span>
-                      <span className={styles.itemTime}>{item.time}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className={styles.noItemBadge}>
-                <span className={styles.noItemIcon}>🚫</span>
-                배출 없음
-              </div>
-            )}
+      <div className={`${styles.nowBox} ${availableNow.length === 0 ? styles.nowBoxEmpty : ''}`}>
+        <p className={styles.nowHeading}>
+          <span className={styles.nowDot} aria-hidden="true" />
+          지금 배출 가능 <span className={styles.nowTime}>{nowLabel} 기준</span>
+        </p>
+        {availableNow.length > 0 ? (
+          <div className={styles.nowItemList}>
+            {availableNow.map((a) => {
+              const meta = CATEGORY_META[a.name] || { icon: '❔', className: '' };
+              return (
+                <div key={a.name} className={`${styles.nowItem} ${styles[meta.className] || ''}`}>
+                  <span className={styles.nowItemIcon}>{meta.icon}</span>
+                  <span className={styles.nowItemName}>{a.name}</span>
+                  <span className={styles.nowItemTime}>{a.text}</span>
+                </div>
+              );
+            })}
           </div>
-        ))}
+        ) : (
+          <p className={styles.nowEmptyText}>지금은 배출할 수 있는 품목이 없어요.</p>
+        )}
       </div>
 
-      {isValid(record.TMPRY_BULK_WASTE_EMSN_MTHD) && (
-        <div className={styles.infoBox}>
-          <span className={styles.infoBoxIcon}>🛋️</span>
-          <div>
-            <p className={styles.infoBoxLabel}>대형폐기물</p>
-            <p className={styles.infoBoxText}>
-              {record.TMPRY_BULK_WASTE_EMSN_MTHD}
-              {isValid(record.TMPRY_BULK_WASTE_EMSN_PLC) &&
-                ` (배출 장소: ${formatItemList(record.TMPRY_BULK_WASTE_EMSN_PLC)})`}
-            </p>
-          </div>
-        </div>
+      {upcoming.length > 0 && (
+        <ul className={styles.upcomingList}>
+          {upcoming.map((a) => {
+            const meta = CATEGORY_META[a.name] || { icon: '❔' };
+            return (
+              <li key={a.name} className={styles.upcomingItem}>
+                <span className={styles.upcomingName}>
+                  {meta.icon} {a.name}
+                </span>
+                <span className={a.status === 'today' ? styles.upcomingToday : styles.upcomingLater}>
+                  {a.text}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
       )}
 
-      {record.UNCLLT_DAY && (
-        <div className={styles.infoBox}>
-          <span className={styles.infoBoxIcon}>📅</span>
-          <div>
-            <p className={styles.infoBoxLabel}>미수거일</p>
-            <p className={styles.infoBoxText}>{formatItemList(record.UNCLLT_DAY)}</p>
-          </div>
-        </div>
-      )}
-
-      {onReport && (
-        <button type="button" className={styles.reportButton} onClick={() => onReport(record)}>
-          <span aria-hidden="true">🚩</span> 쓰레기통 신고하기
+      <div className={styles.cardActions}>
+        <button type="button" className={styles.fullScheduleButton} onClick={() => setShowFull(true)}>
+          <span aria-hidden="true">📅</span> 전체 시간표 보기
         </button>
-      )}
+        {onReport && (
+          <button type="button" className={styles.reportButton} onClick={() => onReport(record)}>
+            <span aria-hidden="true">🚩</span> 쓰레기통 신고하기
+          </button>
+        )}
+      </div>
 
       {(record.MNG_DEPT_NM || record.MNG_DEPT_TELNO) && (
         <div className={styles.managerContact}>
@@ -91,6 +99,10 @@ function ScheduleResultCard({ title, record, onReport }) {
             )}
           </span>
         </div>
+      )}
+
+      {showFull && (
+        <FullScheduleView title={title} record={record} now={now} onClose={() => setShowFull(false)} />
       )}
     </div>
   );

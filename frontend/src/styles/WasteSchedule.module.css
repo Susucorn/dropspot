@@ -283,13 +283,288 @@
   margin: 0;
 }
 
+/* ── 카드 상단: 지금 배출 가능한 품목 강조 ── */
+.nowBox {
+  padding: 12px 14px;
+  border: 1.5px solid #66bb6a;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #e8f5e9 0%, #f5fbf6 100%);
+}
+
+.nowBoxEmpty {
+  border-color: #e0e0e0;
+  background: #fafafa;
+}
+
+.nowHeading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 800;
+  color: #1b5e20;
+}
+
+.nowBoxEmpty .nowHeading {
+  color: #555;
+}
+
+/* 지금 배출 가능 표시등: 초록 점이 은은하게 깜빡임 */
+.nowDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #43a047;
+  box-shadow: 0 0 0 0 rgba(67, 160, 71, 0.5);
+  animation: nowPulse 1.8s ease-out infinite;
+}
+
+.nowBoxEmpty .nowDot {
+  background: #bdbdbd;
+  animation: none;
+}
+
+@keyframes nowPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(67, 160, 71, 0.5);
+  }
+  100% {
+    box-shadow: 0 0 0 8px rgba(67, 160, 71, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nowDot {
+    animation: none;
+  }
+}
+
+.nowTime {
+  font-size: 11px;
+  font-weight: 500;
+  color: #6b8a6e;
+}
+
+.nowItemList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nowItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  /* 배경/글자색은 품목별 클래스(catFood/catGeneral/catRecycle)에서 적용 */
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.nowItemIcon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.nowItemName {
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.nowItemTime {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.nowEmptyText {
+  margin: 0;
+  font-size: 13px;
+  color: #777;
+}
+
+/* 지금은 아니지만 오늘 이따가 / 다른 날 배출하는 품목 */
+.upcomingList {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.upcomingItem {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 4px;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 13px;
+}
+
+.upcomingItem:last-child {
+  border-bottom: none;
+}
+
+.upcomingName {
+  color: #444;
+  font-weight: 600;
+}
+
+.upcomingToday {
+  color: #e65100;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.upcomingLater {
+  color: #777;
+  white-space: nowrap;
+}
+
+.cardActions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.fullScheduleButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 11px 14px;
+  border: 1.5px solid #cfd8dc;
+  border-radius: 10px;
+  background: #fff;
+  color: #37474f;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.fullScheduleButton:hover {
+  background: #f5f7f8;
+}
+
+/* ── 전체 시간표 새 화면 ── */
+.fullView {
+  position: fixed;
+  inset: 0;
+  z-index: 950;
+  display: flex;
+  flex-direction: column;
+  background: #f5f8f5;
+}
+
+.fullHeader {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+  padding: 14px 20px;
+  background: linear-gradient(90deg, #eaf6ec 0%, #ffffff 100%);
+  border-bottom: 1px solid #d7ecd9;
+}
+
+.backButton {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  border: 1px solid #cfe5d2;
+  border-radius: 999px;
+  background: #fff;
+  color: #2e7d32;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.backButton:hover {
+  background: #e8f5e9;
+}
+
+.fullHeaderText {
+  min-width: 0;
+}
+
+.fullTitle {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  color: #1b3a1f;
+}
+
+.fullSubtitle {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: #5b7a5f;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fullBody {
+  flex: 1;
+  overflow-y: auto;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 20px 16px 32px;
+  box-sizing: border-box;
+}
+
+.fullSection {
+  margin-bottom: 22px;
+  padding: 16px 18px;
+  border: 1px solid #e0e0e0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.fullSectionTitle {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 800;
+  color: #333;
+}
+
+.fullNote {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #888;
+}
+
+.dayCardToday {
+  border-color: #43a047;
+  background: #f1f8f1;
+}
+
+.dayCardToday .dayLabel {
+  border-color: #43a047;
+  background: #43a047;
+  color: #fff;
+}
+
+.todayTag {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #43a047;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .reportButton {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
   width: 100%;
-  margin-top: 12px;
   padding: 11px 14px;
   border: 1.5px solid #43a047;
   border-radius: 10px;
