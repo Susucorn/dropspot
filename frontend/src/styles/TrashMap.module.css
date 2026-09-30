@@ -103,6 +103,16 @@
   text-decoration: line-through;
 }
 
+.legendCount,
+.legendCountRecycle {
+  font-weight: 800;
+  color: #4a4a4a;
+}
+
+.legendCountRecycle {
+  color: #1e88e5;
+}
+
 .legendDot {
   width: 12px;
   height: 12px;
@@ -115,6 +125,35 @@
 
 .legendDotRecycle {
   background: #1e88e5;
+}
+
+.legendDotBoth {
+  background: linear-gradient(90deg, #4a4a4a 50%, #1e88e5 50%);
+}
+
+.legendCountBoth {
+  font-weight: 800;
+  color: #37474f;
+}
+
+/* 겸용 클러스터는 테두리 왼쪽/위는 회색, 오른쪽/아래는 파란색 */
+.clusterIconBoth {
+  border-color: #4a4a4a #1e88e5 #1e88e5 #4a4a4a;
+}
+
+.clusterIconBoth .clusterCount {
+  color: #37474f;
+}
+
+.kindBadgeBoth {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  background: linear-gradient(90deg, #eeeeee 50%, #e3f2fd 50%);
+  color: #37474f;
 }
 
 .kindBadgeGeneral,

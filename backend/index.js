@@ -38,6 +38,27 @@ function getDistance(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// 지도 화면 영역(남서/북동 모서리 좌표) 안에 있는 항목만 골라냄. 영역 파라미터가 잘못되면 null
+function filterInBounds(records, query) {
+  const swLat = parseFloat(query.swLat);
+  const swLng = parseFloat(query.swLng);
+  const neLat = parseFloat(query.neLat);
+  const neLng = parseFloat(query.neLng);
+  if ([swLat, swLng, neLat, neLng].some(isNaN)) return null;
+
+  return records.filter((r) => {
+    const lat = parseFloat(r.위도);
+    const lng = parseFloat(r.경도);
+    return lat >= swLat && lat <= neLat && lng >= swLng && lng <= neLng;
+  });
+}
+
+app.get('/api/trashbins/in-bounds', (req, res) => {
+  const result = filterInBounds(trashbinData.records, req.query);
+  if (!result) return res.status(400).json({ error: '지도 영역 정보가 필요합니다.' });
+  res.json(result);
+});
+
 app.get('/api/trashbins/nearby', (req, res) => {
   const userLat = parseFloat(req.query.lat);
   const userLng = parseFloat(req.query.lng);
@@ -91,9 +112,16 @@ function normalizeRecyclingCenter(item) {
     경도: pickField(item, ['longitude', 'lot', 'lng']),
     시도명,
     시군구명,
-    전화번호: pickField(item, ['phoneNumber', 'operInstitutionTelno', 'telno'], /Telno$|phone/i),
-    운영시간: pickField(item, ['operTime', 'operHour'], /oper.*(Time|Hour|Hm)/i),
+    전화번호: pickField(item, ['operPhoneNumber', 'phoneNumber'], /Telno$|phone/i),
+    운영시간: formatHours(item.weekdayOperOpenHhmm, item.weekdayOperColseHhmm),
+    휴일운영시간: formatHours(item.holidayOperOpenHhmm, item.holidayCloseOpenHhmm),
+    휴무일: (item.rstdeInfo || '').split('+').filter(Boolean).join(', '),
+    취급품목: (item.trtmntPrdlst || '').split('+').filter(Boolean).join(', '),
   };
+}
+
+function formatHours(open, close) {
+  return open && close ? `${open} ~ ${close}` : '';
 }
 
 async function loadRecyclingCenterData() {
@@ -134,9 +162,11 @@ async function loadRecyclingCenterData() {
       console.log('🔍 재활용센터 API 응답 확인:', JSON.stringify(data).slice(0, 500));
     }
 
-    const body = data?.response?.body;
+    // 이 API는 다른 공공 API와 달리 response 래퍼 없이 { header, body }를 바로 내려줌
+    const root = data?.response ?? data;
+    const body = root?.body;
     if (!body) {
-      console.error('❌ 재활용센터 body가 없어요. 응답 헤더:', data?.response?.header);
+      console.error('❌ 재활용센터 body가 없어요. 응답 헤더:', root?.header);
       break;
     }
     totalCount = Number(body.totalCount) || 0;
@@ -158,6 +188,12 @@ app.get('/api/recycling-centers', (req, res) => {
   const { sido } = req.query;
   if (!sido) return res.json(recyclingCenterData);
   res.json(recyclingCenterData.filter((r) => r.시도명 === sido));
+});
+
+app.get('/api/recycling-centers/in-bounds', (req, res) => {
+  const result = filterInBounds(recyclingCenterData, req.query);
+  if (!result) return res.status(400).json({ error: '지도 영역 정보가 필요합니다.' });
+  res.json(result);
 });
 
 app.get('/api/recycling-centers/nearby', (req, res) => {

@@ -20,6 +20,21 @@ export function zoomIntoCluster(map, lat, lng, level) {
   map.setLevel(level);
 }
 
+// 좌표가 속한 시/도 이름(예: "부산광역시")을 반환 (카카오맵 services 라이브러리 필요)
+export function getSidoFromCoords(lat, lng) {
+  return new Promise((resolve, reject) => {
+    const kakao = window.kakao;
+    const geocoder = new kakao.maps.services.Geocoder();
+    geocoder.coord2RegionCode(lng, lat, (result, status) => {
+      if (status === kakao.maps.services.Status.OK && result[0]?.region_1depth_name) {
+        resolve(result[0].region_1depth_name);
+      } else {
+        reject(new Error('시/도를 찾을 수 없어요.'));
+      }
+    });
+  });
+}
+
 // 주소 문자열(예: "부산광역시 북구 화명동")을 좌표로 변환 (카카오맵 services 라이브러리 필요)
 export function geocodeAddress(address) {
   return new Promise((resolve, reject) => {
