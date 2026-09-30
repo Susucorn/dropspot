@@ -14,6 +14,11 @@ export function fetchNearbyTrashbins(lat, lng, radius = 1) {
   );
 }
 
+// 부산광역시 남구 공공쓰레기통 원본 목록 (좌표 없음: { 연번, 위치, 설치대수, 종류 })
+export function fetchNamguTrashbins() {
+  return fetch(`${BASE_URL}/api/namgu-trashbins`).then((res) => res.json());
+}
+
 function boundsQuery({ swLat, swLng, neLat, neLng }) {
   return `swLat=${swLat}&swLng=${swLng}&neLat=${neLat}&neLng=${neLng}`;
 }

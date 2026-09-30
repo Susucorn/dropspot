@@ -414,6 +414,33 @@ app.get('/api/waste-spots', async (req, res) => {
   }
 });
 
+// ── 부산광역시 남구_공공쓰레기통 현황 (공공데이터포털 파일데이터 자동변환 API, 서버 시작 시 캐싱) ──
+// 좌표 없이 "이기대 큰고개쉼터 팔각정" 같은 장소명만 있어서, 좌표 변환은 프론트에서 카카오 장소 검색으로 함
+const NAMGU_TRASHBIN_URL =
+  'https://api.odcloud.kr/api/15087700/v1/uddi:4116126b-1692-4d6f-8bc4-b935aedc0992'; // 20251211 기준 데이터
+let namguTrashbinData = [];
+
+async function loadNamguTrashbinData() {
+  const serviceKey = process.env.NAMGU_TRASHBIN_SERVICE_KEY || process.env.HOUSEHOLD_WASTE_SERVICE_KEY;
+  if (!serviceKey) {
+    console.error('❌ 남구 공공쓰레기통 API 인증키가 .env에 없어요!');
+    return;
+  }
+  const query = new URLSearchParams({ serviceKey, page: '1', perPage: '1000', returnType: 'JSON' });
+  const response = await fetch(`${NAMGU_TRASHBIN_URL}?${query}`);
+  const data = await response.json();
+  if (!Array.isArray(data?.data)) {
+    console.error('❌ 남구 공공쓰레기통 응답 형식이 달라요:', JSON.stringify(data).slice(0, 300));
+    return;
+  }
+  namguTrashbinData = data.data;
+  console.log(`남구 공공쓰레기통 데이터 ${namguTrashbinData.length}건 로드 완료`);
+}
+
+app.get('/api/namgu-trashbins', (req, res) => {
+  res.json(namguTrashbinData);
+});
+
 // ── 쓰레기통 신고 접수 (사진은 base64로 받아 파일로 저장, 신고 내용은 JSON 파일에 누적) ──
 const REPORT_STATUSES = ['파손', '없음', '이동됨', '가득 참', '오염', '기타'];
 const REPORT_MAX_PHOTOS = 3;
@@ -494,6 +521,7 @@ app.post('/api/reports', express.json({ limit: '25mb' }), (req, res) => {
 Promise.all([
   loadWasteScheduleData().catch((err) => console.error('배출 규칙 데이터 로드 실패:', err)),
   loadRecyclingCenterData().catch((err) => console.error('재활용센터 데이터 로드 실패:', err)),
+  loadNamguTrashbinData().catch((err) => console.error('남구 공공쓰레기통 데이터 로드 실패:', err)),
 ])
   .finally(() => {
     app.listen(process.env.PORT || 4000, () => {

@@ -445,6 +445,12 @@
   color: #666;
 }
 
+.panelNote {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #8a8a8a;
+}
+
 .panelDivider {
   border: none;
   border-top: 1px solid #e0e0e0;

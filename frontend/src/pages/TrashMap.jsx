@@ -13,15 +13,24 @@ import {
   fetchNearbyRecyclingCenters,
   fetchTrashbinsInBounds,
   fetchRecyclingCentersInBounds,
+  fetchNamguTrashbins,
 } from '../api/trashbinApi';
 import { fetchSchedule, fetchRegions as fetchScheduleRegions } from '../api/wasteScheduleApi';
-import { filterValidBins, getBinKind, formatBinType, BIN_KIND_LABELS } from '../utils/trashbinUtils';
+import {
+  filterValidBins,
+  getBinKind,
+  formatBinType,
+  toNamguBin,
+  isInScope,
+  BIN_KIND_LABELS,
+} from '../utils/trashbinUtils';
 import {
   fitBoundsToBins,
   centerMapOnLocation,
   zoomIntoCluster,
   geocodeAddress,
   getSidoFromCoords,
+  findPlaceCoords,
 } from '../utils/kakaoMapUtils';
 import { getCurrentLocation } from '../utils/geolocation';
 import { isValid, dedupeScheduleResults, splitZoneNames, normalizeZoneName } from '../utils/wasteScheduleUtils';
@@ -213,6 +222,10 @@ function TrashMap() {
   const [selectedSido, setSelectedSido] = useState('부산광역시');
   const [bins, setBins] = useState([]);
   const [centers, setCenters] = useState([]);
+  // 부산 남구 공공쓰레기통 (장소명을 좌표로 바꾼 것) + 지금 불러온 휴지통 범위.
+  // 남구 데이터는 한 번만 받아서 좌표로 바꿔 두고, 범위가 바뀔 때마다 그 안에 있는 것만 골라서 표시
+  const [namguBins, setNamguBins] = useState([]);
+  const [binScope, setBinScope] = useState(null);
   // 범례에서 고른 종류들만 지도에 표시 (여러 개 선택 가능). 비어 있으면 기본: 쓰레기통 3종류만, 재활용센터는 숨김
   const [selectedKinds, setSelectedKinds] = useState([]);
   const [myLocation, setMyLocation] = useState(null);
@@ -245,9 +258,11 @@ function TrashMap() {
   const markers = useMemo(
     () => [
       ...bins.map((item) => ({ item, kind: getBinKind(item) })),
+      // 남구 공공쓰레기통은 지금 불러온 범위(시도/반경/화면 영역) 안에 있는 것만 함께 표시
+      ...namguBins.filter((b) => isInScope(b, binScope)).map((item) => ({ item, kind: getBinKind(item) })),
       ...centers.map((item) => ({ item, kind: 'center' })),
     ],
-    [bins, centers]
+    [bins, centers, namguBins, binScope]
   );
   // 일반/재활용/겸용/재활용센터는 서로 겹치지 않게 각각 따로 셈 (겸용은 일반·재활용 개수에 포함하지 않음)
   const kindCounts = useMemo(() => {
@@ -288,6 +303,30 @@ function TrashMap() {
     fetchScheduleRegions().then(setScheduleRegionMap).catch(console.error);
   }, []);
 
+  // 남구 공공쓰레기통 목록을 받아 장소명을 카카오 장소 검색으로 좌표로 변환 (카카오 지도 로드 후 한 번만).
+  // 좌표를 못 찾은 항목은 지도에 표시하지 않음
+  useEffect(() => {
+    if (loading) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const records = await fetchNamguTrashbins();
+        const converted = [];
+        for (const record of records) {
+          const coords = await findPlaceCoords(record.위치, '부산 남구');
+          if (coords) converted.push(toNamguBin(record, coords));
+          else console.warn('남구 공공쓰레기통 위치를 찾지 못했어요:', record.위치);
+        }
+        if (!cancelled) setNamguBins(converted);
+      } catch (err) {
+        console.error(err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loading]);
+
   // 내 위치를 찾으면 좌표로 시/도를 알아내 왼쪽 시/도 선택 박스를 맞춤
   // (myLocation이 있으면 시/도 전체 휴지통 요청은 건너뛰므로 주변 마커는 그대로 유지됨)
   useEffect(() => {
@@ -299,6 +338,7 @@ function TrashMap() {
     // 내 위치를 찾는 중이거나 찾은 뒤, 또는 지도를 드래그해 둘러보는 중에는 시도 전체를 불러오지 않음
     if (myLocation || locating || browsing) return;
     const loadId = ++loadIdRef.current;
+    setBinScope({ type: 'sido', sido: selectedSido });
     fetchTrashbinsByRegion(selectedSido)
       .then((data) => loadId === loadIdRef.current && setBins(filterValidBins(data)))
       .catch(console.error);
@@ -382,6 +422,7 @@ function TrashMap() {
     const area = { swLat: sw.getLat(), swLng: sw.getLng(), neLat: ne.getLat(), neLng: ne.getLng() };
 
     const loadId = ++loadIdRef.current;
+    setBinScope({ type: 'bounds', ...area });
     fetchTrashbinsInBounds(area)
       .then((data) => loadId === loadIdRef.current && setBins(filterValidBins(data)))
       .catch(console.error);
@@ -449,6 +490,7 @@ function TrashMap() {
   function centerAndLoadNearbyBins(location, level, radiusKm) {
     if (mapRef.current) centerMapOnLocation(mapRef.current, location, level);
     const loadId = ++loadIdRef.current;
+    setBinScope({ type: 'radius', lat: location[0], lng: location[1], radiusKm });
     fetchNearbyTrashbins(location[0], location[1], radiusKm)
       .then((data) => loadId === loadIdRef.current && setBins(filterValidBins(data)))
       .catch(console.error);
@@ -523,6 +565,7 @@ function TrashMap() {
           .then(({ bins: found, radius }) => {
             if (loadId !== loadIdRef.current) return;
             setBins(found);
+            setBinScope({ type: 'radius', lat: location[0], lng: location[1], radiusKm: radius });
             if (found.length === 0) setLocationError(`내 위치 ${radius}km 안에 휴지통 정보가 없어요.`);
             // 재활용센터도 휴지통을 찾은 반경에 맞춰 넓게 찾음
             return fetchNearbyRecyclingCenters(location[0], location[1], Math.max(radius * 3, 5)).then(
@@ -821,6 +864,13 @@ function TrashMap() {
                         </p>
                         {selectedBin.휴지통종류 && (
                           <p className={styles.panelMeta}>종류: {formatBinType(selectedBin.휴지통종류)}</p>
+                        )}
+                        {selectedBin.설치대수 > 1 && (
+                          <p className={styles.panelMeta}>설치 대수: {selectedBin.설치대수}대</p>
+                        )}
+                        {selectedBin.출처 && <p className={styles.panelMeta}>출처: {selectedBin.출처}</p>}
+                        {selectedBin.대략적위치 && (
+                          <p className={styles.panelNote}>※ 장소 이름으로 찾은 대략적인 위치예요.</p>
                         )}
                         {selectedBin.전화번호 && <p className={styles.panelMeta}>전화: {selectedBin.전화번호}</p>}
                         {selectedBin.운영시간 && (
