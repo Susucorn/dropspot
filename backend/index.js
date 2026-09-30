@@ -316,13 +316,40 @@ app.get('/api/waste-schedule/regions', (req, res) => {
   res.json(result);
 });
 
+// 휴지통/재활용센터 데이터와 배출 규칙 데이터의 시도명이 다른 경우 (행정구역 통합·명칭 변경, 오타)
+// 예: 휴지통 데이터는 "광주광역시"/"전라남도"인데 배출 규칙 데이터는 "전남광주통합특별시"
+const CTPV_ALIASES = {
+  광주광역시: ['전남광주통합특별시'],
+  전라남도: ['전남광주통합특별시'],
+  전라북도: ['전북특별자치도'],
+  강원도: ['강원특별자치도'],
+  서을특별시: ['서울특별시'],
+};
+
+// 시군구명 비교용: "동두천시"와 "동두천", "창원시 의창구"와 "창원시"처럼 표기가 달라도 같은 곳으로 봄
+function normalizeSggName(name) {
+  return (name || '').trim().split(/\s+/)[0].replace(/시$/, '');
+}
+
+function findScheduleRecords(ctpv, sgg) {
+  const ctpvCandidates = [ctpv, ...(CTPV_ALIASES[ctpv] || [])];
+  for (const c of ctpvCandidates) {
+    const inCtpv = wasteScheduleData.filter((r) => r.CTPV_NM === c);
+    const exact = inCtpv.filter((r) => r.SGG_NM === sgg);
+    if (exact.length > 0) return exact;
+    const normalized = normalizeSggName(sgg);
+    const loose = inCtpv.filter((r) => normalizeSggName(r.SGG_NM) === normalized);
+    if (loose.length > 0) return loose;
+  }
+  return [];
+}
+
 app.get('/api/waste-schedule', (req, res) => {
   const { ctpv, sgg } = req.query;
   if (!ctpv || !sgg) {
     return res.status(400).json({ error: '시도와 시군구를 선택해주세요.' });
   }
-  const matched = wasteScheduleData.filter((r) => r.CTPV_NM === ctpv && r.SGG_NM === sgg);
-  res.json(matched);
+  res.json(findScheduleRecords(ctpv, sgg));
 });
 
 // ── 분리배출 정보조회 서비스 (기후에너지환경부, 실시간 프록시) ──
