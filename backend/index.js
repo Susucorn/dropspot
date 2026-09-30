@@ -414,31 +414,71 @@ app.get('/api/waste-spots', async (req, res) => {
   }
 });
 
-// ── 부산광역시 남구_공공쓰레기통 현황 (공공데이터포털 파일데이터 자동변환 API, 서버 시작 시 캐싱) ──
-// 좌표 없이 "이기대 큰고개쉼터 팔각정" 같은 장소명만 있어서, 좌표 변환은 프론트에서 카카오 장소 검색으로 함
-const NAMGU_TRASHBIN_URL =
-  'https://api.odcloud.kr/api/15087700/v1/uddi:4116126b-1692-4d6f-8bc4-b935aedc0992'; // 20251211 기준 데이터
-let namguTrashbinData = [];
+// ── 구청별 공공쓰레기통 현황 (공공데이터포털 파일데이터 자동변환 API, 서버 시작 시 캐싱) ──
+// 좌표가 없어서 좌표 변환은 프론트에서 카카오로 함 (주소가 있으면 주소 검색, 없으면 장소명 검색).
+// 컬럼 이름이 구청마다 달라서 { 위치명, 도로명주소, 지번주소, 종류, 설치대수 }로 맞춰서 내려줌.
+// 새 구청 데이터를 추가하려면 이 목록에 항목만 추가하면 됨
+// (공공데이터포털에서 해당 데이터 '활용신청'을 해야 같은 인증키로 호출 가능)
+const DISTRICT_TRASHBIN_SOURCES = [
+  {
+    id: 'busan-namgu',
+    name: '부산광역시 남구 공공쓰레기통 현황',
+    sido: '부산광역시',
+    sgg: '남구',
+    url: 'https://api.odcloud.kr/api/15087700/v1/uddi:4116126b-1692-4d6f-8bc4-b935aedc0992', // 20251211
+  },
+  {
+    id: 'daegu-donggu',
+    name: '대구광역시 동구 가로 쓰레기통 설치현황',
+    sido: '대구광역시',
+    sgg: '동구',
+    url: 'https://api.odcloud.kr/api/15127640/v1/uddi:7e8c7561-a6b0-4a34-b86d-a282f1427a2c', // 20250519
+  },
+];
+const districtTrashbinData = {}; // { [source.id]: 정규화된 항목 배열 }
 
-async function loadNamguTrashbinData() {
-  const serviceKey = process.env.NAMGU_TRASHBIN_SERVICE_KEY || process.env.HOUSEHOLD_WASTE_SERVICE_KEY;
-  if (!serviceKey) {
-    console.error('❌ 남구 공공쓰레기통 API 인증키가 .env에 없어요!');
-    return;
-  }
-  const query = new URLSearchParams({ serviceKey, page: '1', perPage: '1000', returnType: 'JSON' });
-  const response = await fetch(`${NAMGU_TRASHBIN_URL}?${query}`);
-  const data = await response.json();
-  if (!Array.isArray(data?.data)) {
-    console.error('❌ 남구 공공쓰레기통 응답 형식이 달라요:', JSON.stringify(data).slice(0, 300));
-    return;
-  }
-  namguTrashbinData = data.data;
-  console.log(`남구 공공쓰레기통 데이터 ${namguTrashbinData.length}건 로드 완료`);
+function normalizeDistrictTrashbin(row) {
+  return {
+    위치명: pickField(row, ['위치명', '위치', '설치장소']),
+    도로명주소: pickField(row, ['설치위치 도로명주소', '도로명주소'], /도로명/),
+    지번주소: pickField(row, ['설치위치 지번주소', '지번주소'], /지번/),
+    종류: pickField(row, ['종류']),
+    설치대수: Number(pickField(row, ['설치대수', '설치 개수', '설치개수'], /설치.*(대수|개수)/)) || 1,
+  };
 }
 
-app.get('/api/namgu-trashbins', (req, res) => {
-  res.json(namguTrashbinData);
+async function loadDistrictTrashbinSource(source) {
+  const serviceKey = process.env.HOUSEHOLD_WASTE_SERVICE_KEY;
+  if (!serviceKey) throw new Error('HOUSEHOLD_WASTE_SERVICE_KEY가 .env에 없어요!');
+  const query = new URLSearchParams({ serviceKey, page: '1', perPage: '1000', returnType: 'JSON' });
+  const response = await fetch(`${source.url}?${query}`);
+  const data = await response.json().catch(() => null);
+  if (!Array.isArray(data?.data)) {
+    const hint = response.status === 401 ? ' (공공데이터포털에서 이 데이터 활용신청이 필요해요)' : '';
+    throw new Error(`응답 오류 ${response.status}${hint}: ${JSON.stringify(data).slice(0, 200)}`);
+  }
+  districtTrashbinData[source.id] = data.data.map(normalizeDistrictTrashbin).filter((r) => r.위치명 || r.도로명주소 || r.지번주소);
+  console.log(`${source.name} ${districtTrashbinData[source.id].length}건 로드 완료`);
+}
+
+// 한 곳이 실패해도(예: 활용신청 전) 나머지 구청 데이터는 계속 불러옴
+async function loadDistrictTrashbinData() {
+  await Promise.all(
+    DISTRICT_TRASHBIN_SOURCES.map((source) =>
+      loadDistrictTrashbinSource(source).catch((err) => console.error(`❌ ${source.name} 로드 실패:`, err.message))
+    )
+  );
+}
+
+app.get('/api/district-trashbins', (req, res) => {
+  res.json(
+    DISTRICT_TRASHBIN_SOURCES.filter((s) => districtTrashbinData[s.id]).map((s) => ({
+      source: s.name,
+      sido: s.sido,
+      sgg: s.sgg,
+      records: districtTrashbinData[s.id],
+    }))
+  );
 });
 
 // ── 쓰레기통 신고 접수 (사진은 base64로 받아 파일로 저장, 신고 내용은 JSON 파일에 누적) ──
@@ -521,7 +561,7 @@ app.post('/api/reports', express.json({ limit: '25mb' }), (req, res) => {
 Promise.all([
   loadWasteScheduleData().catch((err) => console.error('배출 규칙 데이터 로드 실패:', err)),
   loadRecyclingCenterData().catch((err) => console.error('재활용센터 데이터 로드 실패:', err)),
-  loadNamguTrashbinData().catch((err) => console.error('남구 공공쓰레기통 데이터 로드 실패:', err)),
+  loadDistrictTrashbinData().catch((err) => console.error('구청별 공공쓰레기통 데이터 로드 실패:', err)),
 ])
   .finally(() => {
     app.listen(process.env.PORT || 4000, () => {

@@ -77,10 +77,17 @@
 }
 
 /* 상단 바의 범례: 누르면 해당 종류의 마커를 켜고 끔 */
+/* 범례는 항상 상단 바의 두 번째 줄 전체를 차지 (지도를 드래그해 시/도 이름·개수가 바뀌어도 위치가
+   흔들리지 않음). 종류가 늘어나면(예: 의료수거함) 이 줄 안에서 자연스럽게 줄바꿈됨 */
 .legend {
   display: flex;
-  flex-shrink: 0;
+  flex-basis: 100%;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.legend strong {
+  font-variant-numeric: tabular-nums;
 }
 
 .legendItem {
@@ -233,8 +240,10 @@
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
 }
 
+/* 시/도 이름 길이(예: 대구광역시 ↔ 전북특별자치도)에 따라 폭이 바뀌지 않도록 고정 */
 .regionSelect {
   flex-shrink: 0;
+  width: 150px;
   height: 38px;
   padding: 0 10px;
   border: 1.5px solid #dbe6dd;
@@ -293,6 +302,13 @@
 .errorText {
   color: red;
   margin-top: 4px;
+}
+
+/* 상단 바의 오류 문구는 항상 별도 줄에 표시해서 범례 위치를 밀어내지 않게 함 */
+.controlPanel .errorText {
+  flex-basis: 100%;
+  margin-top: -8px;
+  font-size: 13px;
 }
 
 .myLocationDot {

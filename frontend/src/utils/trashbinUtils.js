@@ -28,20 +28,21 @@ export const BIN_KIND_LABELS = {
   center: '재활용센터',
 };
 
-// 부산 남구 공공쓰레기통 원본({ 연번, 위치, 설치대수, 종류 })과 장소 검색으로 찾은 좌표를
-// 기존 휴지통 데이터와 같은 필드 모양으로 합침
-export function toNamguBin(record, coords) {
+// 구청별 공공쓰레기통 항목({ 위치명, 도로명주소, 지번주소, 종류, 설치대수 })과 카카오로 찾은 좌표를
+// 기존 휴지통 데이터와 같은 필드 모양으로 합침. approximate: 주소 없이 장소명으로 찾은 대략적인 좌표인지
+export function toDistrictBin(record, group, coords, approximate) {
   return {
-    출처: '부산광역시 남구 공공쓰레기통 현황',
-    설치장소명: record.위치,
-    시도명: '부산광역시',
-    시군구명: '남구',
-    소재지도로명주소: coords.address,
+    출처: group.source,
+    설치장소명: record.위치명 || '',
+    시도명: group.sido,
+    시군구명: group.sgg,
+    소재지도로명주소: record.도로명주소 || coords.address || '',
+    소재지지번주소: record.지번주소 || '',
     위도: String(coords.lat),
     경도: String(coords.lng),
     휴지통종류: record.종류 || '',
     설치대수: record.설치대수,
-    대략적위치: true,
+    대략적위치: approximate,
   };
 }
 
