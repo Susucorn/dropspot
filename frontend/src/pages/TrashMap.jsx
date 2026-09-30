@@ -9,10 +9,8 @@ import {
   fetchRegions,
   fetchTrashbinsByRegion,
   fetchNearbyTrashbins,
-  fetchRecyclingCentersByRegion,
-  fetchNearbyRecyclingCenters,
   fetchTrashbinsInBounds,
-  fetchRecyclingCentersInBounds,
+  fetchFacilities,
   fetchDistrictTrashbins,
 } from '../api/trashbinApi';
 import { fetchSchedule, fetchRegions as fetchScheduleRegions } from '../api/wasteScheduleApi';
@@ -33,7 +31,13 @@ import {
   findDistrictBinCoords,
 } from '../utils/kakaoMapUtils';
 import { getCurrentLocation } from '../utils/geolocation';
-import { isValid, dedupeScheduleResults, splitZoneNames, normalizeZoneName } from '../utils/wasteScheduleUtils';
+import {
+  isValid,
+  dedupeScheduleResults,
+  splitZoneNames,
+  normalizeZoneName,
+  zoneDisplayName,
+} from '../utils/wasteScheduleUtils';
 import { CLUSTER_ZOOM_LEVEL, clusterBins } from '../utils/binClusterUtils';
 
 const INITIAL_MAP_LEVEL = 13;
@@ -122,23 +126,48 @@ function RecyclingCenterIcon({ open }) {
   );
 }
 
+// 의류수거함은 보라색 원형 배지 안에 흰 티셔츠 모양으로 표시. 클릭하면 더 진한 보라색으로 강조
+function ClothingBinIcon({ open }) {
+  const color = open ? '#4a148c' : '#8e24aa';
+  const transition = { transition: 'fill 0.25s ease' };
+  return (
+    <svg width="34" height="34" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="12" cy="12" r="11" fill={color} stroke="#fff" strokeWidth="1.5" style={transition} />
+      <path
+        d="M9.2 6.5 L6 8.2 L7.3 10.8 L8.5 10.3 V17.5 H15.5 V10.3 L16.7 10.8 L18 8.2 L14.8 6.5 C14.4 7.6 13.3 8.3 12 8.3 C10.7 8.3 9.6 7.6 9.2 6.5 Z"
+        fill="#fff"
+      />
+    </svg>
+  );
+}
+
 const MARKER_ICONS = {
   general: TrashBinIcon,
   recycle: RecyclingBinIcon,
   both: MixedBinIcon,
   center: RecyclingCenterIcon,
+  clothing: ClothingBinIcon,
 };
-// 마커를 그리는 순서/겹침 우선순위: 재활용센터(건물) > 재활용 > 겸용 > 일반
-const KIND_ORDER = { general: 0, both: 1, recycle: 2, center: 3 };
+// 마커를 그리는 순서/겹침 우선순위: 재활용센터(건물) > 의류수거함 > 재활용 > 겸용 > 일반
+const KIND_ORDER = { general: 0, both: 1, recycle: 2, clothing: 3, center: 4 };
 // 범례 버튼 목록 (클래스명은 TrashMap.module.css 기준)
 const LEGEND_ITEMS = [
   { kind: 'general', label: '일반 쓰레기통', unit: '개', dotClass: 'legendDotGeneral', countClass: 'legendCount' },
   { kind: 'recycle', label: '재활용 쓰레기통', unit: '개', dotClass: 'legendDotRecycle', countClass: 'legendCountRecycle' },
   { kind: 'both', label: '일반+재활용 겸용', unit: '개', dotClass: 'legendDotBoth', countClass: 'legendCountBoth' },
   { kind: 'center', label: '재활용센터', unit: '곳', dotClass: 'legendDotCenter', countClass: 'legendCountCenter' },
+  { kind: 'clothing', label: '의류수거함', unit: '개', dotClass: 'legendDotClothing', countClass: 'legendCountClothing' },
 ];
-// 범례에서 아무것도 고르지 않았을 때 기본으로 보여줄 종류 (재활용센터는 건물이라 기본으로는 숨김)
+// 범례에서 아무것도 고르지 않았을 때 기본으로 보여줄 종류
+// (재활용센터·의류수거함은 쓰레기통이 아니라서 기본으로는 숨기고, 범례에서 골랐을 때만 표시)
 const DEFAULT_VISIBLE_KINDS = ['general', 'recycle', 'both'];
+
+// 휴지통과 같은 범위로 함께 불러오는 시설 데이터 (백엔드 경로, 반경 조회 시 넓혀서 찾을 반경)
+const FACILITY_TYPES = [
+  // 재활용센터는 휴지통보다 훨씬 드물어서 더 넓게 찾음
+  { kind: 'center', path: '/api/recycling-centers', radiusKm: (r) => Math.max(r * 3, 5) },
+  { kind: 'clothing', path: '/api/clothing-bins', radiusKm: (r) => Math.max(r * 2, 2) },
+];
 
 function isKindShown(kind, selectedKinds) {
   return selectedKinds.length > 0 ? selectedKinds.includes(kind) : DEFAULT_VISIBLE_KINDS.includes(kind);
@@ -149,6 +178,7 @@ const CLUSTER_CLASS = {
   recycle: styles.clusterIconRecycle,
   both: styles.clusterIconBoth,
   center: styles.clusterIconCenter,
+  clothing: styles.clusterIconClothing,
 };
 
 function LocationIcon() {
@@ -221,7 +251,8 @@ function TrashMap() {
   const [regions, setRegions] = useState([]);
   const [selectedSido, setSelectedSido] = useState('부산광역시');
   const [bins, setBins] = useState([]);
-  const [centers, setCenters] = useState([]);
+  // 재활용센터·의류수거함 같은 시설 데이터 ({ [kind]: 항목 배열 }, FACILITY_TYPES 참고)
+  const [facilities, setFacilities] = useState({ center: [], clothing: [] });
   // 구청별 공공쓰레기통(부산 남구, 대구 동구 등, 주소/장소명을 좌표로 바꾼 것) + 지금 불러온 휴지통 범위.
   // 구청 데이터는 한 번만 받아서 좌표로 바꿔 두고, 범위가 바뀔 때마다 그 안에 있는 것만 골라서 표시
   const [districtBins, setDistrictBins] = useState([]);
@@ -254,19 +285,19 @@ function TrashMap() {
 
   // 레벨 숫자가 클수록 더 축소된 상태 → 많이 축소했을 때만 클러스터로 묶어서 표시
   const isClustered = zoomLevel >= CLUSTER_ZOOM_LEVEL;
-  // 휴지통 API 항목은 휴지통종류로 일반/재활용/겸용을 나누고, 재활용센터 API 항목은 건물(center)로 따로 분류
+  // 휴지통 API 항목은 휴지통종류로 일반/재활용/겸용을 나누고, 재활용센터·의류수거함은 시설 종류로 따로 분류
   const markers = useMemo(
     () => [
       ...bins.map((item) => ({ item, kind: getBinKind(item) })),
       // 구청별 공공쓰레기통은 지금 불러온 범위(시도/반경/화면 영역) 안에 있는 것만 함께 표시
       ...districtBins.filter((b) => isInScope(b, binScope)).map((item) => ({ item, kind: getBinKind(item) })),
-      ...centers.map((item) => ({ item, kind: 'center' })),
+      ...FACILITY_TYPES.flatMap((type) => facilities[type.kind].map((item) => ({ item, kind: type.kind }))),
     ],
-    [bins, centers, districtBins, binScope]
+    [bins, facilities, districtBins, binScope]
   );
-  // 일반/재활용/겸용/재활용센터는 서로 겹치지 않게 각각 따로 셈 (겸용은 일반·재활용 개수에 포함하지 않음)
+  // 종류별로 서로 겹치지 않게 각각 따로 셈 (겸용은 일반·재활용 개수에 포함하지 않음)
   const kindCounts = useMemo(() => {
-    const counts = { general: 0, recycle: 0, both: 0, center: 0 };
+    const counts = Object.fromEntries(LEGEND_ITEMS.map((item) => [item.kind, 0]));
     markers.forEach(({ kind }) => {
       counts[kind] += 1;
     });
@@ -285,10 +316,10 @@ function TrashMap() {
     setSelectedKinds((prev) => (prev.includes(kind) ? prev.filter((k) => k !== kind) : [...prev, kind]));
   }
 
-  // 일반/재활용/겸용/재활용센터를 따로 묶어서 클러스터 색으로도 구분
+  // 종류별로 따로 묶어서 클러스터 색으로도 구분
   const clusters = useMemo(() => {
     if (!isClustered) return [];
-    const groups = { general: [], both: [], recycle: [], center: [] };
+    const groups = Object.fromEntries(LEGEND_ITEMS.map((item) => [item.kind, []]));
     visibleMarkers.forEach(({ item, kind }) => groups[kind].push(item));
     return Object.entries(groups).flatMap(([kind, items]) =>
       clusterBins(items, zoomLevel).map((c) => ({ ...c, kind }))
@@ -345,9 +376,7 @@ function TrashMap() {
     fetchTrashbinsByRegion(selectedSido)
       .then((data) => loadId === loadIdRef.current && setBins(filterValidBins(data)))
       .catch(console.error);
-    fetchRecyclingCentersByRegion(selectedSido)
-      .then((data) => loadId === loadIdRef.current && setCenters(filterValidBins(data)))
-      .catch(console.error);
+    loadFacilities(loadId, { type: 'sido', sido: selectedSido });
   }, [selectedSido, myLocation, locating, browsing]);
 
   useEffect(() => {
@@ -403,12 +432,13 @@ function TrashMap() {
 
   // 동을 선택했다면 여러 동이 묶인 전체 문자열 대신 선택한 동 이름만 제목으로 사용.
   // 동을 아직 선택하지 않았다면 "+"로 이어진 원본 대신 ", "로 구분해 전체 동 이름이 잘리지 않게 보여줌
+  // 구역 칸에 배출 방법 설명문이 잘못 들어간 경우엔 "북구 전역"처럼 앞부분만 보여줌
   function getScheduleCardTitle(r) {
     if (!isValid(r.MNG_ZONE_TRGT_RGN_NM)) return `${r.CTPV_NM} ${r.SGG_NM}`;
     const dong = pickedRegion && !selectedBin ? pickedRegion.dong : null;
-    const zones = splitZoneNames(r.MNG_ZONE_TRGT_RGN_NM).map(normalizeZoneName);
+    const zones = splitZoneNames(r.MNG_ZONE_TRGT_RGN_NM).map(zoneDisplayName).filter(Boolean);
     if (dong && zones.includes(dong)) return dong;
-    return zones.join(', ');
+    return zones.length > 0 ? zones.join(', ') : `${r.CTPV_NM} ${r.SGG_NM}`;
   }
 
   // 내 위치/지역 검색/시도 선택처럼 지도를 새로 맞추는 동작 전에 호출해 둘러보기 모드를 끔
@@ -429,9 +459,7 @@ function TrashMap() {
     fetchTrashbinsInBounds(area)
       .then((data) => loadId === loadIdRef.current && setBins(filterValidBins(data)))
       .catch(console.error);
-    fetchRecyclingCentersInBounds(area)
-      .then((data) => loadId === loadIdRef.current && setCenters(filterValidBins(data)))
-      .catch(console.error);
+    loadFacilities(loadId, { type: 'bounds', ...area });
 
     const center = map.getCenter();
     getSidoFromCoords(center.getLat(), center.getLng()).then(setSelectedSido).catch(console.error);
@@ -497,10 +525,21 @@ function TrashMap() {
     fetchNearbyTrashbins(location[0], location[1], radiusKm)
       .then((data) => loadId === loadIdRef.current && setBins(filterValidBins(data)))
       .catch(console.error);
-    // 재활용센터는 휴지통보다 훨씬 드물어서 더 넓은 반경으로 찾음
-    fetchNearbyRecyclingCenters(location[0], location[1], Math.max(radiusKm * 3, 5))
-      .then((data) => loadId === loadIdRef.current && setCenters(filterValidBins(data)))
-      .catch(console.error);
+    loadFacilities(loadId, { type: 'radius', lat: location[0], lng: location[1], radiusKm });
+  }
+
+  // 재활용센터·의류수거함을 휴지통과 같은 범위(시도/반경/화면 영역)로 불러옴.
+  // 반경 조회는 시설마다 드문 정도가 달라 FACILITY_TYPES의 radiusKm로 넓혀서 찾음
+  function loadFacilities(loadId, scope) {
+    FACILITY_TYPES.forEach((type) => {
+      const typeScope = scope.type === 'radius' ? { ...scope, radiusKm: type.radiusKm(scope.radiusKm) } : scope;
+      fetchFacilities(type.path, typeScope)
+        .then((data) => {
+          if (loadId !== loadIdRef.current) return;
+          setFacilities((prev) => ({ ...prev, [type.kind]: filterValidBins(data) }));
+        })
+        .catch(console.error);
+    });
   }
 
   // 휴지통 데이터가 지역별로 드문드문해서, 1km 안에 없으면 3km → 10km 순으로 반경을 넓혀 찾음
@@ -570,10 +609,8 @@ function TrashMap() {
             setBins(found);
             setBinScope({ type: 'radius', lat: location[0], lng: location[1], radiusKm: radius });
             if (found.length === 0) setLocationError(`내 위치 ${radius}km 안에 휴지통 정보가 없어요.`);
-            // 재활용센터도 휴지통을 찾은 반경에 맞춰 넓게 찾음
-            return fetchNearbyRecyclingCenters(location[0], location[1], Math.max(radius * 3, 5)).then(
-              (data) => loadId === loadIdRef.current && setCenters(filterValidBins(data))
-            );
+            // 재활용센터·의류수거함도 휴지통을 찾은 반경에 맞춰 찾음
+            loadFacilities(loadId, { type: 'radius', lat: location[0], lng: location[1], radiusKm: radius });
           })
           .catch(console.error);
       })
@@ -852,6 +889,7 @@ function TrashMap() {
                             recycle: styles.kindBadgeRecycle,
                             both: styles.kindBadgeBoth,
                             center: styles.kindBadgeCenter,
+                            clothing: styles.kindBadgeClothing,
                           }[kind];
                           return (
                             <>
@@ -875,6 +913,7 @@ function TrashMap() {
                         {selectedBin.대략적위치 && (
                           <p className={styles.panelNote}>※ 장소 이름으로 찾은 대략적인 위치예요.</p>
                         )}
+                        {selectedBin.세부위치 && <p className={styles.panelMeta}>세부 위치: {selectedBin.세부위치}</p>}
                         {selectedBin.관리기관 && <p className={styles.panelMeta}>관리기관: {selectedBin.관리기관}</p>}
                         {selectedBin.전화번호 && <p className={styles.panelMeta}>전화: {selectedBin.전화번호}</p>}
                         {selectedBin.운영시간 && (

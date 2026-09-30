@@ -3,6 +3,7 @@
 // 재활용센터 API 항목은 시설구분이 '재활용'으로 들어오며, 쓰레기통이 아니라 건물이므로 따로 분류
 export function getBinKind(bin) {
   if (bin.시설구분 === '재활용') return 'center';
+  if (bin.시설구분 === '의류수거함') return 'clothing';
   const type = bin.휴지통종류 || '';
   // 남구 공공쓰레기통 데이터는 종류가 '분리수거함'/'분리수거대'로 들어옴
   const hasRecycle = type.includes('재활용') || type.includes('분리수거');
@@ -26,6 +27,7 @@ export const BIN_KIND_LABELS = {
   recycle: '재활용 쓰레기통',
   both: '일반+재활용 쓰레기통',
   center: '재활용센터',
+  clothing: '의류수거함',
 };
 
 // 구청별 공공쓰레기통 항목({ 위치명, 도로명주소, 지번주소, 종류, 설치대수 })과 카카오로 찾은 좌표를

@@ -32,6 +32,20 @@ export function normalizeZoneName(zone) {
   return name;
 }
 
+// 관리구역 칸에 구역 이름 대신 배출 방법 설명문이 통째로 들어간 경우 (원본 데이터 입력 오류, 백엔드와 같은 기준)
+// 예: 대구 북구 "북구 전역(배출방법) 1. 스티커 구입하여 ... (여기로, www.yeogiro24.co.kr) ..."
+export function isDescriptiveZoneName(name) {
+  return name.length > 40 || /https?:|www\.|\d{2,4}-\d{3,4}|(^|\s)\d+\.\s/.test(name);
+}
+
+// 화면에 보여줄 구역 이름: 설명문형이면 괄호 앞부분(예: "북구 전역")만 남기고, 그것도 없으면 null
+export function zoneDisplayName(zone) {
+  const name = normalizeZoneName(zone);
+  if (!isDescriptiveZoneName(name)) return name;
+  const head = name.split('(')[0].trim();
+  return head && !isDescriptiveZoneName(head) ? head : null;
+}
+
 // API 원본 데이터에서 종종 끝이 잘려서 들어오는 항목명을 정상 형태로 되돌림
 const TRUNCATED_TEXT_FIXES = {
   재활용쓰: '재활용쓰레기',

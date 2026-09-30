@@ -184,34 +184,118 @@ async function loadRecyclingCenterData() {
   console.log(`재활용센터 데이터 ${recyclingCenterData.length}건 로드 완료 (원본 ${all.length}건)`);
 }
 
-app.get('/api/recycling-centers', (req, res) => {
-  const { sido } = req.query;
-  if (!sido) return res.json(recyclingCenterData);
-  res.json(recyclingCenterData.filter((r) => r.시도명 === sido));
-});
+// 재활용센터·의류수거함처럼 서버에 캐싱해 둔 시설 데이터에 공통 조회 API 3개를 붙임
+//   GET {basePath}?sido=        시도별
+//   GET {basePath}/in-bounds    지도 화면 영역 안
+//   GET {basePath}/nearby       좌표 기준 반경(km) 안 (가까운 순)
+// getData는 요청 시점의 최신 캐시를 돌려주는 함수
+function registerFacilityRoutes(basePath, getData, defaultRadiusKm) {
+  app.get(basePath, (req, res) => {
+    const { sido } = req.query;
+    if (!sido) return res.json(getData());
+    res.json(getData().filter((r) => r.시도명 === sido));
+  });
 
-app.get('/api/recycling-centers/in-bounds', (req, res) => {
-  const result = filterInBounds(recyclingCenterData, req.query);
-  if (!result) return res.status(400).json({ error: '지도 영역 정보가 필요합니다.' });
-  res.json(result);
-});
+  app.get(`${basePath}/in-bounds`, (req, res) => {
+    const result = filterInBounds(getData(), req.query);
+    if (!result) return res.status(400).json({ error: '지도 영역 정보가 필요합니다.' });
+    res.json(result);
+  });
 
-app.get('/api/recycling-centers/nearby', (req, res) => {
-  const userLat = parseFloat(req.query.lat);
-  const userLng = parseFloat(req.query.lng);
-  const radius = parseFloat(req.query.radius) || 5;
+  app.get(`${basePath}/nearby`, (req, res) => {
+    const userLat = parseFloat(req.query.lat);
+    const userLng = parseFloat(req.query.lng);
+    const radius = parseFloat(req.query.radius) || defaultRadiusKm;
 
-  if (isNaN(userLat) || isNaN(userLng)) {
-    return res.status(400).json({ error: '위치 정보가 필요합니다.' });
+    if (isNaN(userLat) || isNaN(userLng)) {
+      return res.status(400).json({ error: '위치 정보가 필요합니다.' });
+    }
+
+    const nearby = getData()
+      .map((r) => ({ ...r, distance: getDistance(userLat, userLng, parseFloat(r.위도), parseFloat(r.경도)) }))
+      .filter((r) => r.distance <= radius)
+      .sort((a, b) => a.distance - b.distance);
+
+    res.json(nearby);
+  });
+}
+
+registerFacilityRoutes('/api/recycling-centers', () => recyclingCenterData, 5);
+
+// ── 의류수거함 (전국의류수거함표준데이터 공공 API, 서버 시작 시 한 번만 불러와 캐싱) ──
+let clothingBinData = [];
+
+// 표준데이터의 시도명(ctpvNm)이 '전남광주통합특별시'처럼 휴지통 데이터·시도 선택 박스와 다를 수 있어서,
+// 주소 첫 단어가 시/도 이름이면(예: "광주광역시 북구 ...") 그걸 우선 사용
+function sidoFromAddress(address, fallback) {
+  const first = (address || '').trim().split(/\s+/)[0] || '';
+  return /(특별시|광역시|특별자치시|특별자치도|도)$/.test(first) ? first : fallback;
+}
+
+// '전남광주통합특별시'는 휴지통 데이터·시도 선택 박스에 없어서, 시군구로 광주광역시/전라남도를 나눔
+const GWANGJU_DISTRICTS = ['동구', '서구', '남구', '북구', '광산구'];
+function splitMergedSido(sido, sgg) {
+  if (sido !== '전남광주통합특별시') return sido;
+  return GWANGJU_DISTRICTS.includes(sgg) ? '광주광역시' : '전라남도';
+}
+
+function normalizeClothingBin(item) {
+  const 도로명주소 = pickField(item, ['lctnRoadNmAddr']);
+  const 지번주소 = pickField(item, ['lctnLotnoAddr']);
+  const 시군구명 = pickField(item, ['sggNm']);
+  const 시도명 = splitMergedSido(sidoFromAddress(도로명주소 || 지번주소, pickField(item, ['ctpvNm'])), 시군구명);
+  return {
+    시설구분: '의류수거함',
+    시설명: pickField(item, ['instlPlcNm']),
+    소재지도로명주소: 도로명주소,
+    소재지지번주소: 지번주소,
+    위도: pickField(item, ['lat']),
+    경도: pickField(item, ['lot']),
+    시도명,
+    시군구명,
+    세부위치: pickField(item, ['dtlPstn']),
+    관리기관: pickField(item, ['mngInstNm']).split('+').filter(Boolean).join(', '),
+    전화번호: pickField(item, ['mngInstTelno']),
+  };
+}
+
+async function loadClothingBinData() {
+  const serviceKey = process.env.HOUSEHOLD_WASTE_SERVICE_KEY;
+  if (!serviceKey) {
+    console.error('❌ 의류수거함 API 인증키(HOUSEHOLD_WASTE_SERVICE_KEY)가 .env에 없어요!');
+    return;
   }
 
-  const nearby = recyclingCenterData
-    .map((r) => ({ ...r, distance: getDistance(userLat, userLng, parseFloat(r.위도), parseFloat(r.경도)) }))
-    .filter((r) => r.distance <= radius)
-    .sort((a, b) => a.distance - b.distance);
+  const numOfRows = 1000;
+  let pageNo = 1;
+  let all = [];
+  let totalCount = Infinity;
 
-  res.json(nearby);
-});
+  while (all.length < totalCount) {
+    const query = new URLSearchParams({ serviceKey, pageNo: String(pageNo), numOfRows: String(numOfRows), type: 'json' });
+    const response = await fetch(`https://api.data.go.kr/openapi/tn_pubr_public_clothing_collect_bins_api?${query}`);
+    const data = await response.json().catch(() => null);
+    // 이 API도 재활용센터 API처럼 response 래퍼 없이 { header, body }를 바로 내려줌
+    const body = (data?.response ?? data)?.body;
+    if (!body) {
+      console.error('❌ 의류수거함 응답 형식이 달라요:', JSON.stringify(data).slice(0, 300));
+      break;
+    }
+    totalCount = Number(body.totalCount) || 0;
+    const rawItems = Array.isArray(body.items) ? body.items : body.items?.item || [];
+    const items = Array.isArray(rawItems) ? rawItems : [rawItems];
+    if (items.length === 0) break;
+    all = all.concat(items);
+    pageNo++;
+  }
+
+  clothingBinData = all
+    .map(normalizeClothingBin)
+    .filter((r) => !isNaN(parseFloat(r.위도)) && !isNaN(parseFloat(r.경도)));
+  console.log(`의류수거함 데이터 ${clothingBinData.length}건 로드 완료 (원본 ${all.length}건)`);
+}
+
+registerFacilityRoutes('/api/clothing-bins', () => clothingBinData, 3);
 
 // ── 배출 규칙 데이터 (공공 API, 서버 시작 시 한 번만 불러와 캐싱) ──
 let wasteScheduleData = [];
@@ -290,7 +374,15 @@ function normalizeZoneName(zone) {
   return name;
 }
 
-// { 시도: { 시군구: [동/읍/면, ...] } } 형태로 응답 (동 정보는 MNG_ZONE_TRGT_RGN_NM을 펼쳐 수집)
+// 관리구역 칸에 구역 이름 대신 배출 방법 설명문이 통째로 들어간 경우 (원본 데이터 입력 오류)
+// 예: 대구 북구 "북구 전역(배출방법) 1. 스티커 구입하여 ... (여기로, www.yeogiro24.co.kr) ..."
+// 주소(URL)·전화번호·"1. " 같은 번호 매기기가 있거나 너무 길면 설명문으로 봄
+function isDescriptiveZoneName(name) {
+  return name.length > 40 || /https?:|www\.|\d{2,4}-\d{3,4}|(^|\s)\d+\.\s/.test(name);
+}
+
+// { 시도: { 시군구: [동/읍/면, ...] } } 형태로 응답 (동 정보는 MNG_ZONE_TRGT_RGN_NM을 펼쳐 수집).
+// 설명문형 구역 이름은 지역 검색 자동완성에 나오지 않도록 제외
 app.get('/api/waste-schedule/regions', (req, res) => {
   const map = {};
   wasteScheduleData.forEach((r) => {
@@ -300,7 +392,7 @@ app.get('/api/waste-schedule/regions', (req, res) => {
     if (isValidRegionText(r.MNG_ZONE_TRGT_RGN_NM)) {
       splitZoneNames(r.MNG_ZONE_TRGT_RGN_NM).forEach((zone) => {
         const cleaned = normalizeZoneName(zone);
-        if (cleaned) map[r.CTPV_NM][r.SGG_NM].add(cleaned);
+        if (cleaned && !isDescriptiveZoneName(cleaned)) map[r.CTPV_NM][r.SGG_NM].add(cleaned);
       });
     }
   });
@@ -604,6 +696,7 @@ Promise.all([
   loadWasteScheduleData().catch((err) => console.error('배출 규칙 데이터 로드 실패:', err)),
   loadRecyclingCenterData().catch((err) => console.error('재활용센터 데이터 로드 실패:', err)),
   loadDistrictTrashbinData().catch((err) => console.error('구청별 공공쓰레기통 데이터 로드 실패:', err)),
+  loadClothingBinData().catch((err) => console.error('의류수거함 데이터 로드 실패:', err)),
 ])
   .finally(() => {
     app.listen(process.env.PORT || 4000, () => {
