@@ -50,7 +50,7 @@ function TrashBinIcon({ open }) {
   );
 }
 
-// 재활용센터는 파란색 통 + 흰색 순환 화살표로 일반 휴지통과 구분. 클릭하면 뚜껑이 열리며 더 진한 파란색으로 강조됨
+// 재활용 쓰레기통은 파란색 통 + 흰색 순환 화살표로 일반 휴지통과 구분. 클릭하면 뚜껑이 열리며 더 진한 파란색으로 강조됨
 function RecyclingBinIcon({ open }) {
   const color = open ? '#0d47a1' : '#1e88e5';
   const fillTransition = { transition: 'fill 0.25s ease' };
@@ -97,9 +97,50 @@ function MixedBinIcon({ open }) {
   );
 }
 
-const MARKER_ICONS = { general: TrashBinIcon, recycle: RecyclingBinIcon, both: MixedBinIcon };
-// 마커를 그리는 순서/겹침 우선순위: 재활용이 가장 위에 오도록
-const KIND_ORDER = { general: 0, both: 1, recycle: 2 };
+// 재활용센터는 쓰레기통이 아닌 건물이라 청록색 건물 아이콘(지붕 + 창문 + 출입문)으로 표시.
+// 흰 테두리 원형 배지 안에 넣어 쓰레기통 아이콘과 모양부터 구분되게 하고, 클릭하면 더 진한 색으로 강조
+function RecyclingCenterIcon({ open }) {
+  const color = open ? '#00574b' : '#00897b';
+  return (
+    <svg width="38" height="38" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="12" cy="12" r="11" fill="#fff" stroke={color} strokeWidth="1.5" style={{ transition: 'stroke 0.25s ease' }} />
+      <path d="M5.5 10.5 L12 5.5 L18.5 10.5 Z" fill={color} style={{ transition: 'fill 0.25s ease' }} />
+      <rect x="7" y="10.5" width="10" height="7.5" fill={color} style={{ transition: 'fill 0.25s ease' }} />
+      <rect x="8.3" y="12" width="2" height="2" fill="#fff" />
+      <rect x="13.7" y="12" width="2" height="2" fill="#fff" />
+      <rect x="10.9" y="14.5" width="2.2" height="3.5" fill="#fff" />
+    </svg>
+  );
+}
+
+const MARKER_ICONS = {
+  general: TrashBinIcon,
+  recycle: RecyclingBinIcon,
+  both: MixedBinIcon,
+  center: RecyclingCenterIcon,
+};
+// 마커를 그리는 순서/겹침 우선순위: 재활용센터(건물) > 재활용 > 겸용 > 일반
+const KIND_ORDER = { general: 0, both: 1, recycle: 2, center: 3 };
+// 범례 버튼 목록 (클래스명은 TrashMap.module.css 기준)
+const LEGEND_ITEMS = [
+  { kind: 'general', label: '일반 쓰레기통', unit: '개', dotClass: 'legendDotGeneral', countClass: 'legendCount' },
+  { kind: 'recycle', label: '재활용 쓰레기통', unit: '개', dotClass: 'legendDotRecycle', countClass: 'legendCountRecycle' },
+  { kind: 'both', label: '일반+재활용 겸용', unit: '개', dotClass: 'legendDotBoth', countClass: 'legendCountBoth' },
+  { kind: 'center', label: '재활용센터', unit: '곳', dotClass: 'legendDotCenter', countClass: 'legendCountCenter' },
+];
+// 범례에서 아무것도 고르지 않았을 때 기본으로 보여줄 종류 (재활용센터는 건물이라 기본으로는 숨김)
+const DEFAULT_VISIBLE_KINDS = ['general', 'recycle', 'both'];
+
+function isKindShown(kind, selectedKinds) {
+  return selectedKinds.length > 0 ? selectedKinds.includes(kind) : DEFAULT_VISIBLE_KINDS.includes(kind);
+}
+
+// 클러스터 테두리 색 클래스 (일반은 기본 스타일)
+const CLUSTER_CLASS = {
+  recycle: styles.clusterIconRecycle,
+  both: styles.clusterIconBoth,
+  center: styles.clusterIconCenter,
+};
 
 function LocationIcon() {
   return (
@@ -172,10 +213,8 @@ function TrashMap() {
   const [selectedSido, setSelectedSido] = useState('부산광역시');
   const [bins, setBins] = useState([]);
   const [centers, setCenters] = useState([]);
-  // 범례에서 일반 휴지통 / 재활용센터를 각각 켜고 끌 수 있음
-  const [showGeneral, setShowGeneral] = useState(true);
-  const [showRecycle, setShowRecycle] = useState(true);
-  const [showBoth, setShowBoth] = useState(true);
+  // 범례에서 고른 종류들만 지도에 표시 (여러 개 선택 가능). 비어 있으면 기본: 쓰레기통 3종류만, 재활용센터는 숨김
+  const [selectedKinds, setSelectedKinds] = useState([]);
   const [myLocation, setMyLocation] = useState(null);
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState('');
@@ -202,17 +241,17 @@ function TrashMap() {
 
   // 레벨 숫자가 클수록 더 축소된 상태 → 많이 축소했을 때만 클러스터로 묶어서 표시
   const isClustered = zoomLevel >= CLUSTER_ZOOM_LEVEL;
-  // 휴지통 API 항목은 휴지통종류로 일반/재활용/겸용을 나누고, 재활용센터 API 항목은 모두 재활용으로 봄
+  // 휴지통 API 항목은 휴지통종류로 일반/재활용/겸용을 나누고, 재활용센터 API 항목은 건물(center)로 따로 분류
   const markers = useMemo(
     () => [
       ...bins.map((item) => ({ item, kind: getBinKind(item) })),
-      ...centers.map((item) => ({ item, kind: 'recycle' })),
+      ...centers.map((item) => ({ item, kind: 'center' })),
     ],
     [bins, centers]
   );
-  // 일반/재활용/겸용은 서로 겹치지 않게 각각 따로 셈 (겸용은 일반·재활용 개수에 포함하지 않음)
+  // 일반/재활용/겸용/재활용센터는 서로 겹치지 않게 각각 따로 셈 (겸용은 일반·재활용 개수에 포함하지 않음)
   const kindCounts = useMemo(() => {
-    const counts = { general: 0, recycle: 0, both: 0 };
+    const counts = { general: 0, recycle: 0, both: 0, center: 0 };
     markers.forEach(({ kind }) => {
       counts[kind] += 1;
     });
@@ -221,16 +260,20 @@ function TrashMap() {
 
   // 범례에서 켜 둔 종류만 표시. 재활용 마커는 일반 마커 위에 그려서 겹쳐도 가려지지 않게 뒤쪽으로 정렬
   const visibleMarkers = useMemo(() => {
-    const shown = { general: showGeneral, recycle: showRecycle, both: showBoth };
     return markers
-      .filter(({ kind }) => shown[kind])
+      .filter(({ kind }) => isKindShown(kind, selectedKinds))
       .sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind]);
-  }, [markers, showGeneral, showRecycle, showBoth]);
+  }, [markers, selectedKinds]);
 
-  // 일반/재활용/겸용을 따로 묶어서 클러스터 색으로도 구분
+  // 범례 버튼: 누르면 선택에 추가, 선택된 걸 다시 누르면 선택에서 뺌
+  function toggleKind(kind) {
+    setSelectedKinds((prev) => (prev.includes(kind) ? prev.filter((k) => k !== kind) : [...prev, kind]));
+  }
+
+  // 일반/재활용/겸용/재활용센터를 따로 묶어서 클러스터 색으로도 구분
   const clusters = useMemo(() => {
     if (!isClustered) return [];
-    const groups = { general: [], both: [], recycle: [] };
+    const groups = { general: [], both: [], recycle: [], center: [] };
     visibleMarkers.forEach(({ item, kind }) => groups[kind].push(item));
     return Object.entries(groups).flatMap(([kind, items]) =>
       clusterBins(items, zoomLevel).map((c) => ({ ...c, kind }))
@@ -551,33 +594,30 @@ function TrashMap() {
             </button>
           </div>
           <div className={styles.legend}>
-            <button
-              type="button"
-              className={`${styles.legendItem} ${showGeneral ? '' : styles.legendItemOff}`}
-              onClick={() => setShowGeneral((v) => !v)}
-              aria-pressed={showGeneral}
-            >
-              <span className={`${styles.legendDot} ${styles.legendDotGeneral}`} />
-              일반 쓰레기통 <strong className={styles.legendCount}>{kindCounts.general}</strong>개
-            </button>
-            <button
-              type="button"
-              className={`${styles.legendItem} ${showRecycle ? '' : styles.legendItemOff}`}
-              onClick={() => setShowRecycle((v) => !v)}
-              aria-pressed={showRecycle}
-            >
-              <span className={`${styles.legendDot} ${styles.legendDotRecycle}`} />
-              재활용 쓰레기통 <strong className={styles.legendCountRecycle}>{kindCounts.recycle}</strong>개
-            </button>
-            <button
-              type="button"
-              className={`${styles.legendItem} ${showBoth ? '' : styles.legendItemOff}`}
-              onClick={() => setShowBoth((v) => !v)}
-              aria-pressed={showBoth}
-            >
-              <span className={`${styles.legendDot} ${styles.legendDotBoth}`} />
-              일반+재활용 겸용 <strong className={styles.legendCountBoth}>{kindCounts.both}</strong>개
-            </button>
+            {/* 누른 종류들만 지도에 표시(여러 개 선택 가능). 선택을 모두 풀면 기본 상태(쓰레기통 전체)로 돌아감 */}
+            {LEGEND_ITEMS.map((item) => {
+              const selected = selectedKinds.includes(item.kind);
+              return (
+                <button
+                  key={item.kind}
+                  type="button"
+                  className={`${styles.legendItem} ${
+                    selected
+                      ? styles.legendItemActive
+                      : isKindShown(item.kind, selectedKinds)
+                        ? ''
+                        : styles.legendItemOff
+                  }`}
+                  onClick={() => toggleKind(item.kind)}
+                  aria-pressed={selected}
+                  title={selected ? '다시 누르면 선택 해제' : `${item.label} 선택`}
+                >
+                  <span className={`${styles.legendDot} ${styles[item.dotClass]}`} />
+                  {item.label} <strong className={styles[item.countClass]}>{kindCounts[item.kind]}</strong>
+                  {item.unit}
+                </button>
+              );
+            })}
           </div>
           {locationError && <div className={styles.errorText}>{locationError}</div>}
         </div>
@@ -616,13 +656,7 @@ function TrashMap() {
                     clickable
                   >
                     <div
-                      className={`${styles.clusterIcon} ${
-                        cluster.kind === 'recycle'
-                          ? styles.clusterIconRecycle
-                          : cluster.kind === 'both'
-                            ? styles.clusterIconBoth
-                            : ''
-                      }`}
+                      className={`${styles.clusterIcon} ${CLUSTER_CLASS[cluster.kind] || ''}`}
                       onClick={() => handleClusterClick(cluster)}
                     >
                       <span className={styles.clusterCount}>{cluster.count}</span>
@@ -771,6 +805,7 @@ function TrashMap() {
                             general: styles.kindBadgeGeneral,
                             recycle: styles.kindBadgeRecycle,
                             both: styles.kindBadgeBoth,
+                            center: styles.kindBadgeCenter,
                           }[kind];
                           return (
                             <>
@@ -839,7 +874,8 @@ function TrashMap() {
                       key={idx}
                       title={`${scheduleResults.length > 1 ? `${idx + 1}. ` : ''}${getScheduleCardTitle(r)}`}
                       record={r}
-                      onReport={openReport}
+                      // 재활용센터(건물)를 선택했을 때는 쓰레기통 신고 대상이 아니므로 신고 버튼을 숨김
+                      onReport={selectedBin && getBinKind(selectedBin) === 'center' ? undefined : openReport}
                     />
                   ))}
                 </>

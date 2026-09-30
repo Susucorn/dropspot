@@ -98,9 +98,21 @@
   transition: opacity 0.15s ease;
 }
 
+/* 지금 지도에 표시되지 않는 종류: 흐리게 (누르면 그 종류만 보기) */
 .legendItemOff {
-  opacity: 0.4;
-  text-decoration: line-through;
+  opacity: 0.45;
+}
+
+.legendItemOff:hover {
+  opacity: 0.8;
+}
+
+/* 범례에서 골라서 그 종류만 보고 있는 상태 */
+.legendItemActive {
+  border-color: #43a047;
+  background: #e8f5e9;
+  box-shadow: 0 0 0 2px rgba(67, 160, 71, 0.2);
+  font-weight: 700;
 }
 
 .legendCount,
@@ -125,6 +137,38 @@
 
 .legendDotRecycle {
   background: #1e88e5;
+}
+
+/* 재활용센터는 건물이라 범례 점도 지붕 모양(위가 뾰족한 오각형)으로 표시 */
+.legendDotCenter {
+  background: #00897b;
+  border-radius: 1px;
+  clip-path: polygon(50% 0, 100% 40%, 100% 100%, 0 100%, 0 40%);
+}
+
+.legendCountCenter {
+  font-weight: 800;
+  color: #00796b;
+}
+
+.clusterIconCenter {
+  border-color: #00897b;
+  border-radius: 12px;
+}
+
+.clusterIconCenter .clusterCount {
+  color: #00796b;
+}
+
+.kindBadgeCenter {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #e0f2f1;
+  color: #00695c;
 }
 
 .legendDotBoth {
