@@ -4,6 +4,8 @@ import styles from '../styles/TrashMap.module.css';
 import scheduleStyles from '../styles/WasteSchedule.module.css';
 import ScheduleResultCard from '../components/ScheduleResultCard';
 import ReportModal from '../components/ReportModal';
+import MobileBottomSheet from '../components/MobileBottomSheet';
+import { useIsMobile } from '../hooks/useIsMobile';
 import { useWasteItemSearch, WasteItemSearchBox, WasteItemResults } from '../components/WasteItemSearch';
 import {
   fetchRegions,
@@ -27,7 +29,7 @@ import {
   centerMapOnLocation,
   zoomIntoCluster,
   geocodeAddress,
-  getSidoFromCoords,
+  getRegionFromCoords,
   findDistrictBinCoords,
 } from '../utils/kakaoMapUtils';
 import { getCurrentLocation } from '../utils/geolocation';
@@ -177,6 +179,15 @@ function isKindShown(kind, selectedKinds) {
 }
 
 // 클러스터 테두리 색 클래스 (일반은 기본 스타일)
+// 선택한 쓰레기통/시설 종류 라벨 배지 클래스
+const KIND_BADGE_CLASS = {
+  general: styles.kindBadgeGeneral,
+  recycle: styles.kindBadgeRecycle,
+  both: styles.kindBadgeBoth,
+  center: styles.kindBadgeCenter,
+  clothing: styles.kindBadgeClothing,
+};
+
 const CLUSTER_CLASS = {
   recycle: styles.clusterIconRecycle,
   both: styles.clusterIconBoth,
@@ -244,6 +255,8 @@ function TrashMap() {
   });
 
   const mapRef = useRef(null);
+  // 카카오 지도 객체가 만들어졌는지. 위치를 지도보다 먼저 찾은 경우에도 지도가 준비되면 그 위치로 옮기기 위해 사용
+  const [mapReady, setMapReady] = useState(false);
   // 휴지통/재활용센터 요청마다 번호를 매겨, 늦게 도착한 이전 요청 응답이 최신 결과를 덮어쓰지 않게 함
   // (예: 처음 들어올 때 기본 시도 전체 요청이 내 위치 주변 요청보다 늦게 끝나는 경우)
   const loadIdRef = useRef(0);
@@ -262,6 +275,10 @@ function TrashMap() {
   const [binScope, setBinScope] = useState(null);
   // 범례에서 고른 종류들만 지도에 표시 (여러 개 선택 가능). 비어 있으면 기본: 쓰레기통 3종류만, 재활용센터는 숨김
   const [selectedKinds, setSelectedKinds] = useState([]);
+  const isMobile = useIsMobile();
+  // 내 위치(또는 드래그한 지도 중심)가 속한 { sido, sgg }. 모바일에서는 아무것도 선택하지 않아도
+  // 이 지역의 배출 규칙을 하단 패널에 보여줌
+  const [autoRegion, setAutoRegion] = useState(null);
   const [myLocation, setMyLocation] = useState(null);
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState('');
@@ -368,7 +385,7 @@ function TrashMap() {
   // (myLocation이 있으면 시/도 전체 휴지통 요청은 건너뛰므로 주변 마커는 그대로 유지됨)
   useEffect(() => {
     if (!myLocation || loading) return;
-    getSidoFromCoords(myLocation[0], myLocation[1]).then(setSelectedSido).catch(console.error);
+    updateRegionFromCoords(myLocation[0], myLocation[1]);
   }, [myLocation, loading]);
 
   useEffect(() => {
@@ -383,7 +400,7 @@ function TrashMap() {
   }, [selectedSido, myLocation, locating, browsing]);
 
   useEffect(() => {
-    if (!mapRef.current || loading) return;
+    if (!mapReady || loading) return;
     // 지역 검색으로 직접 중심/줌을 맞췄거나 지도를 드래그해 옮긴 경우에는 자동으로 다시 맞추지 않음
     if (pickedRegion || browsing) return;
 
@@ -398,7 +415,7 @@ function TrashMap() {
     } else if (bins.length > 0) {
       fitBoundsToBins(mapRef.current, bins);
     }
-  }, [bins, myLocation, loading, pickedRegion]);
+  }, [bins, myLocation, loading, pickedRegion, mapReady]);
 
   // 휴지통 아이콘을 클릭하거나 지역을 검색해서 선택하면, 그 지역(시도/시군구, 필요시 동)의
   // 배출 규칙을 오른쪽 패널에 조회 (재활용센터·의류수거함은 배출 시간표를 보여주지 않으므로 조회하지 않음)
@@ -409,8 +426,10 @@ function TrashMap() {
       setScheduleLoading(false);
       return;
     }
-    const ctpv = selectedBin ? selectedBin.시도명 : pickedRegion ? pickedRegion.ctpv : null;
-    const sgg = selectedBin ? selectedBin.시군구명 : pickedRegion ? pickedRegion.sgg : null;
+    // 아무것도 선택하지 않았을 때는 내 위치/지도 중심 지역(autoRegion)의 규칙을 보여줌 (모바일·데스크톱 공통)
+    const fallback = autoRegion;
+    const ctpv = selectedBin ? selectedBin.시도명 : pickedRegion ? pickedRegion.ctpv : fallback?.sido;
+    const sgg = selectedBin ? selectedBin.시군구명 : pickedRegion ? pickedRegion.sgg : fallback?.sgg;
     const dong = selectedBin ? null : pickedRegion ? pickedRegion.dong || null : null;
 
     if (!ctpv || !sgg) {
@@ -437,7 +456,12 @@ function TrashMap() {
         setScheduleError('배출 규칙을 불러오지 못했어요.');
         setScheduleLoading(false);
       });
-  }, [selectedBin, pickedRegion]);
+  }, [selectedBin, pickedRegion, autoRegion]);
+
+  // 데스크톱 ↔ 모바일 레이아웃이 바뀌면 지도 영역 크기가 달라지므로 카카오 지도에 다시 계산하게 함
+  useEffect(() => {
+    mapRef.current?.relayout();
+  }, [isMobile]);
 
   // 동을 선택했다면 여러 동이 묶인 전체 문자열 대신 선택한 동 이름만 제목으로 사용.
   // 동을 아직 선택하지 않았다면 "+"로 이어진 원본 대신 ", "로 구분해 전체 동 이름이 잘리지 않게 보여줌
@@ -471,7 +495,17 @@ function TrashMap() {
     loadFacilities(loadId, { type: 'bounds', ...area });
 
     const center = map.getCenter();
-    getSidoFromCoords(center.getLat(), center.getLng()).then(setSelectedSido).catch(console.error);
+    updateRegionFromCoords(center.getLat(), center.getLng());
+  }
+
+  // 좌표가 속한 시/도로 선택 박스를 맞추고(syncSido), 시/군/구까지 기억해 둠 (모바일 하단 패널의 기본 지역)
+  function updateRegionFromCoords(lat, lng, { syncSido = true } = {}) {
+    getRegionFromCoords(lat, lng)
+      .then((region) => {
+        if (syncSido) setSelectedSido(region.sido);
+        setAutoRegion((prev) => (prev && prev.sido === region.sido && prev.sgg === region.sgg ? prev : region));
+      })
+      .catch(console.error);
   }
 
   // 신고 폼을 열면서 위치를 자동으로 채움: 쓰레기통을 선택했으면 그 쓰레기통 정보,
@@ -487,11 +521,17 @@ function TrashMap() {
         lng: parseFloat(selectedBin.경도),
       };
     } else {
+      // 지역 검색으로 고른 지역, 없으면(모바일 기본 상태) 내 위치/지도 중심 지역을 사용
       const center = mapRef.current?.getCenter();
+      const regionLabel = pickedRegion
+        ? pickedRegion.label
+        : autoRegion
+          ? `${autoRegion.sido} ${autoRegion.sgg}`.trim()
+          : '';
       location = {
         name: '',
-        address: pickedRegion.label,
-        region: `${pickedRegion.ctpv} ${pickedRegion.sgg}`,
+        address: regionLabel,
+        region: pickedRegion ? `${pickedRegion.ctpv} ${pickedRegion.sgg}` : regionLabel,
         lat: center ? center.getLat() : undefined,
         lng: center ? center.getLng() : undefined,
       };
@@ -638,11 +678,111 @@ function TrashMap() {
   if (error) return <div>지도를 불러오지 못했어요. 카카오 앱 키/도메인 등록을 확인해주세요.</div>;
 
   const hasSelection = Boolean(selectedBin || pickedRegion);
+  // 선택이 없어도 내 위치/지도 중심 지역(autoRegion)이 있으면 그 지역의 배출 규칙을 보여줌
+  const autoRegionLabel = autoRegion ? `${autoRegion.sido} ${autoRegion.sgg}`.trim() : '';
+  const hasScheduleTarget = hasSelection || Boolean(autoRegion);
   const hideSchedule = Boolean(selectedBin) && NO_SCHEDULE_KINDS.includes(getBinKind(selectedBin));
+
+  // 지역 검색창 (데스크톱은 오른쪽 패널, 모바일은 지도 위 플로팅 영역에서 같이 사용)
+  const regionSearchRow = (
+    <div className={scheduleStyles.searchRow}>
+      <div className={scheduleStyles.inputWrap}>
+        <input
+          type="text"
+          className={scheduleStyles.searchInput}
+          placeholder={isMobile ? '지역 검색 (예: 부산광역시 북구 화명동)' : '시/도, 시/군/구, 동/읍/면을 검색하세요 (예: 부산광역시 북구 화명동)'}
+          value={regionQuery}
+          onChange={(e) => {
+            setRegionQuery(e.target.value);
+            setShowRegionSuggestions(true);
+          }}
+          onFocus={() => setShowRegionSuggestions(true)}
+          onBlur={() => setTimeout(() => setShowRegionSuggestions(false), 150)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleRegionSearchSubmit();
+          }}
+        />
+        {regionQuery && (
+          <button
+            type="button"
+            className={scheduleStyles.clearButton}
+            aria-label="검색어 지우기"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              handleClearRegionQuery();
+            }}
+          >
+            ×
+          </button>
+        )}
+        {showRegionSuggestions && regionSuggestions.length > 0 && (
+          <ul className={scheduleStyles.suggestionList}>
+            {regionSuggestions.map((o) => (
+              <li
+                key={o.label}
+                className={scheduleStyles.suggestionItem}
+                onMouseDown={() => handleSelectRegion(o)}
+              >
+                {o.label}
+              </li>
+            ))}
+          </ul>
+        )}
+        {showRegionSuggestions && regionQuery.trim() && regionSuggestions.length === 0 && (
+          <ul className={scheduleStyles.suggestionList}>
+            <li className={scheduleStyles.suggestionEmpty}>검색 결과가 없어요.</li>
+          </ul>
+        )}
+      </div>
+      <button
+        type="button"
+        className={scheduleStyles.searchSubmitButton}
+        aria-label="검색"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          handleRegionSearchSubmit();
+        }}
+      >
+        <SearchIcon className={scheduleStyles.searchButtonIcon} />
+      </button>
+    </div>
+  );
+
+  // 모바일 하단 패널에 넘길 제목/선택 정보
+  const sheetTitle = selectedBin
+    ? `${selectedBin.시도명} ${selectedBin.시군구명}`
+    : pickedRegion
+      ? pickedRegion.label
+      : autoRegion
+        ? `${autoRegion.sido} ${autoRegion.sgg}`.trim()
+        : '';
+  const sheetPlace = selectedBin
+    ? (() => {
+        const kind = getBinKind(selectedBin);
+        return {
+          badge: BIN_KIND_LABELS[kind],
+          badgeClass: KIND_BADGE_CLASS[kind],
+          name: selectedBin.시설명 || selectedBin.설치장소명 || BIN_KIND_LABELS[kind],
+          lines: [
+            selectedBin.소재지도로명주소 || selectedBin.소재지지번주소,
+            selectedBin.세부위치,
+            selectedBin.운영시간 && `평일 ${selectedBin.운영시간}`,
+            selectedBin.전화번호 && `☎ ${selectedBin.전화번호}`,
+            selectedBin.distance !== undefined && `약 ${(selectedBin.distance * 1000).toFixed(0)}m`,
+          ],
+        };
+      })()
+    : null;
+  const sheetSelectionKey = selectedBin
+    ? `${selectedBin.위도},${selectedBin.경도},${selectedBin.시설명 || selectedBin.설치장소명}`
+    : pickedRegion
+      ? pickedRegion.label
+      : 'auto';
 
   return (
     <div className={styles.mapWrap}>
       <div className={styles.mapArea}>
+        {!isMobile && (
         <div className={styles.controlPanel}>
           <select
             className={styles.regionSelect}
@@ -714,14 +854,70 @@ function TrashMap() {
           </div>
           {locationError && <div className={styles.errorText}>{locationError}</div>}
         </div>
+        )}
 
         <div className={styles.mapCanvas}>
+          {/* 모바일: 지도 위에 떠 있는 지역 검색창 + 버튼 (내 위치 / 지역별 보기 + 종류별 필터) */}
+          {isMobile && (
+            <div className={styles.floatingControls}>
+              <div className={styles.floatingSearch}>{regionSearchRow}</div>
+              {geocodeError && <p className={styles.floatingError}>{geocodeError}</p>}
+              <div className={styles.floatingRow}>
+                <button
+                  type="button"
+                  className={`${styles.floatingButton} ${myLocation ? styles.floatingButtonActive : ''}`}
+                  onClick={findMyLocation}
+                  disabled={locating}
+                >
+                  <LocationIcon />
+                  {locating ? '찾는 중...' : '내 위치 보기'}
+                </button>
+                <button
+                  type="button"
+                  className={`${styles.floatingButton} ${!myLocation ? styles.floatingButtonActive : ''}`}
+                  onClick={() => {
+                    setMyLocation(null);
+                    setPickedRegion(null);
+                    setSelectedBin(null);
+                    stopBrowsing();
+                  }}
+                >
+                  <RegionIcon />
+                  지역별 보기
+                </button>
+              </div>
+              {/* 종류가 많아서 한 줄로 두고 옆으로 밀어서 봄. 누른 종류들만 지도에 표시(데스크톱 범례와 같음) */}
+              <div className={styles.floatingFilterRow}>
+                {LEGEND_ITEMS.map((item) => {
+                  const selected = selectedKinds.includes(item.kind);
+                  const shown = isKindShown(item.kind, selectedKinds);
+                  return (
+                    <button
+                      key={item.kind}
+                      type="button"
+                      className={`${styles.floatingButton} ${
+                        selected ? styles.floatingButtonActive : shown ? '' : styles.floatingButtonOff
+                      }`}
+                      onClick={() => toggleKind(item.kind)}
+                      aria-pressed={selected}
+                    >
+                      <span className={`${styles.legendDot} ${styles[item.dotClass]}`} />
+                      {item.label} <strong>{kindCounts[item.kind]}</strong>
+                      {item.unit}
+                    </button>
+                  );
+                })}
+              </div>
+              {locationError && <p className={styles.floatingError}>{locationError}</p>}
+            </div>
+          )}
           <Map
             center={{ lat: 36.5, lng: 127.8 }}
             level={INITIAL_MAP_LEVEL}
             style={{ width: '100%', height: '100%' }}
             onCreate={(map) => {
               mapRef.current = map;
+              setMapReady(true);
               setZoomLevel(map.getLevel());
             }}
             onZoomChanged={(map) => setZoomLevel(map.getLevel())}
@@ -732,7 +928,14 @@ function TrashMap() {
               setBrowsing(true);
             }}
             onIdle={(map) => {
-              if (browsingRef.current) loadBinsInView(map);
+              if (browsingRef.current) {
+                loadBinsInView(map);
+              } else if (!myLocation && !locating) {
+                // 내 위치 없이 보는 중(위치 권한 거부, '지역별 보기')이면 배출 규칙을 보여줄 기본 지역을
+                // 지도 중심으로 정함. 시/도 선택은 그대로 두어 지도가 다른 시/도로 튀지 않게 함
+                const center = map.getCenter();
+                updateRegionFromCoords(center.getLat(), center.getLng(), { syncSido: false });
+              }
             }}
           >
             {myLocation && (
@@ -781,6 +984,8 @@ function TrashMap() {
         </div>
       </div>
 
+      {/* 모바일에서는 오른쪽 사이드바 대신 하단 슬라이드 패널(MobileBottomSheet)을 사용 */}
+      {!isMobile && (
       <div className={styles.sidePanelGroup}>
         <button
           type="button"
@@ -813,73 +1018,13 @@ function TrashMap() {
           <>
             <div className={styles.panelSearchArea}>
               <div className={scheduleStyles.searchCard}>
-                <div className={scheduleStyles.searchRow}>
-                  <div className={scheduleStyles.inputWrap}>
-                    <input
-                      type="text"
-                      className={scheduleStyles.searchInput}
-                      placeholder="시/도, 시/군/구, 동/읍/면을 검색하세요 (예: 부산광역시 북구 화명동)"
-                      value={regionQuery}
-                      onChange={(e) => {
-                        setRegionQuery(e.target.value);
-                        setShowRegionSuggestions(true);
-                      }}
-                      onFocus={() => setShowRegionSuggestions(true)}
-                      onBlur={() => setTimeout(() => setShowRegionSuggestions(false), 150)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleRegionSearchSubmit();
-                      }}
-                    />
-                    {regionQuery && (
-                      <button
-                        type="button"
-                        className={scheduleStyles.clearButton}
-                        aria-label="검색어 지우기"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          handleClearRegionQuery();
-                        }}
-                      >
-                        ×
-                      </button>
-                    )}
-                    {showRegionSuggestions && regionSuggestions.length > 0 && (
-                      <ul className={scheduleStyles.suggestionList}>
-                        {regionSuggestions.map((o) => (
-                          <li
-                            key={o.label}
-                            className={scheduleStyles.suggestionItem}
-                            onMouseDown={() => handleSelectRegion(o)}
-                          >
-                            {o.label}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    {showRegionSuggestions && regionQuery.trim() && regionSuggestions.length === 0 && (
-                      <ul className={scheduleStyles.suggestionList}>
-                        <li className={scheduleStyles.suggestionEmpty}>검색 결과가 없어요.</li>
-                      </ul>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    className={scheduleStyles.searchSubmitButton}
-                    aria-label="검색"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      handleRegionSearchSubmit();
-                    }}
-                  >
-                    <SearchIcon className={scheduleStyles.searchButtonIcon} />
-                  </button>
-                </div>
+                {regionSearchRow}
               </div>
               {geocodeError && <div className={styles.errorText}>{geocodeError}</div>}
             </div>
 
             <div className={styles.panelResults}>
-              {!hasSelection && (
+              {!hasScheduleTarget && (
                 <p className={styles.panelPlaceholder}>
                   지역을 검색하거나 지도에서 휴지통 아이콘을 클릭하면
                   <br />
@@ -887,20 +1032,20 @@ function TrashMap() {
                 </p>
               )}
 
-              {hasSelection && (
+              {hasScheduleTarget && (
                 <>
                   <div className={styles.panelResultHeader}>
-                    {selectedBin ? (
+                    {!hasSelection ? (
+                      // 아무것도 고르지 않았을 때: 내 위치(또는 지도 중심) 지역의 배출 규칙을 바로 보여줌
+                      <div>
+                        <span className={styles.autoRegionBadge}>{myLocation ? '내 위치 기준' : '지도 중심 기준'}</span>
+                        <h3 className={styles.panelTitle}>{autoRegionLabel}</h3>
+                      </div>
+                    ) : selectedBin ? (
                       <div>
                         {(() => {
                           const kind = getBinKind(selectedBin);
-                          const badgeClass = {
-                            general: styles.kindBadgeGeneral,
-                            recycle: styles.kindBadgeRecycle,
-                            both: styles.kindBadgeBoth,
-                            center: styles.kindBadgeCenter,
-                            clothing: styles.kindBadgeClothing,
-                          }[kind];
+                          const badgeClass = KIND_BADGE_CLASS[kind];
                           return (
                             <>
                               <span className={badgeClass}>{BIN_KIND_LABELS[kind]}</span>
@@ -945,16 +1090,18 @@ function TrashMap() {
                     ) : (
                       <h3 className={styles.panelTitle}>{pickedRegion.label}</h3>
                     )}
-                    <button
-                      className={styles.closeButton}
-                      onClick={() => {
-                        setSelectedBin(null);
-                        setPickedRegion(null);
-                      }}
-                      aria-label="지우기"
-                    >
-                      ×
-                    </button>
+                    {hasSelection && (
+                      <button
+                        className={styles.closeButton}
+                        onClick={() => {
+                          setSelectedBin(null);
+                          setPickedRegion(null);
+                        }}
+                        aria-label="지우기"
+                      >
+                        ×
+                      </button>
+                    )}
                   </div>
 
                   {/* 재활용센터·의류수거함은 집 앞 배출 시간표와 관계없어서 시설 정보만 보여줌 */}
@@ -965,7 +1112,9 @@ function TrashMap() {
                       <h4 className={styles.panelSubtitle}>
                         {selectedBin
                           ? `${selectedBin.시도명} ${selectedBin.시군구명}`
-                          : `${pickedRegion.ctpv} ${pickedRegion.sgg}`}{' '}
+                          : pickedRegion
+                            ? `${pickedRegion.ctpv} ${pickedRegion.sgg}`
+                            : autoRegionLabel}{' '}
                         배출 규칙 안내
                       </h4>
 
@@ -1012,6 +1161,40 @@ function TrashMap() {
         )}
         </div>
       </div>
+      )}
+
+      {isMobile && (
+        <MobileBottomSheet
+          title={sheetTitle}
+          place={sheetPlace}
+          records={scheduleResults}
+          getRecordTitle={getScheduleCardTitle}
+          loading={scheduleLoading}
+          error={scheduleError}
+          showSchedule={!hideSchedule}
+          selectionKey={sheetSelectionKey}
+          onClearSelection={() => {
+            setSelectedBin(null);
+            setPickedRegion(null);
+          }}
+          onReport={openReport}
+          itemSearchContent={
+            <>
+              <WasteItemSearchBox
+                query={itemSearch.query}
+                setQuery={itemSearch.setQuery}
+                runSearch={itemSearch.runSearch}
+              />
+              <WasteItemResults
+                query={itemSearch.query}
+                items={itemSearch.items}
+                loading={itemSearch.loading}
+                error={itemSearch.error}
+              />
+            </>
+          }
+        />
+      )}
 
       {reportTarget && (
         <ReportModal

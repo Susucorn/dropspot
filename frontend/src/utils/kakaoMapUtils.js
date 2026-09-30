@@ -20,14 +20,15 @@ export function zoomIntoCluster(map, lat, lng, level) {
   map.setLevel(level);
 }
 
-// 좌표가 속한 시/도 이름(예: "부산광역시")을 반환 (카카오맵 services 라이브러리 필요)
-export function getSidoFromCoords(lat, lng) {
+// 좌표가 속한 행정구역 { sido: "부산광역시", sgg: "연제구" }를 반환 (카카오맵 services 라이브러리 필요).
+// sgg는 "수원시 장안구"처럼 구까지 붙어 오거나, 세종시처럼 빈 문자열일 수 있음
+export function getRegionFromCoords(lat, lng) {
   return new Promise((resolve, reject) => {
     const kakao = window.kakao;
     const geocoder = new kakao.maps.services.Geocoder();
     geocoder.coord2RegionCode(lng, lat, (result, status) => {
       if (status === kakao.maps.services.Status.OK && result[0]?.region_1depth_name) {
-        resolve(result[0].region_1depth_name);
+        resolve({ sido: result[0].region_1depth_name, sgg: result[0].region_2depth_name || '' });
       } else {
         reject(new Error('시/도를 찾을 수 없어요.'));
       }

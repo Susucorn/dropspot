@@ -507,3 +507,130 @@
   margin: 0 0 12px;
   font-size: 15px;
 }
+/* ── 모바일: 지도 위 플로팅 버튼 ── */
+.floatingControls {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none; /* 버튼 사이 빈 공간은 지도 조작이 되도록 */
+}
+
+.floatingRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.floatingButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 13px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 999px;
+  background: #fff;
+  color: #333;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.floatingButton strong {
+  font-variant-numeric: tabular-nums;
+  color: #777;
+}
+
+.floatingButton:disabled {
+  opacity: 0.7;
+}
+
+.floatingButtonActive {
+  border-color: #43a047;
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.floatingButtonActive strong {
+  color: #2e7d32;
+}
+
+.floatingError {
+  align-self: flex-start;
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.95);
+  color: #d32f2f;
+  font-size: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  pointer-events: auto;
+}
+
+@media (max-width: 768px) {
+  /* 하단 패널이 지도 영역 기준으로 붙도록 */
+  .mapWrap {
+    position: relative;
+  }
+}
+
+/* 모바일 지도 위 지역 검색창: 데스크톱 검색창(WasteSchedule.module.css)을 작게 줄여서 사용 */
+.floatingSearch {
+  pointer-events: auto;
+}
+
+.floatingSearch input {
+  height: 42px;
+  padding-left: 16px;
+  font-size: 14px;
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.floatingSearch button[aria-label='검색'] {
+  width: 42px;
+  height: 42px;
+}
+
+/* 종류 필터는 한 줄로 두고 가로로 밀어서 봄 */
+.floatingFilterRow {
+  display: flex;
+  gap: 8px;
+  margin: 0 -10px;
+  padding: 0 10px 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  pointer-events: auto;
+}
+
+.floatingFilterRow::-webkit-scrollbar {
+  display: none;
+}
+
+.floatingFilterRow .floatingButton {
+  flex-shrink: 0;
+}
+
+/* 지금 지도에 표시되지 않는 종류: 흐리게 (누르면 그 종류만 보기) */
+.floatingButtonOff {
+  opacity: 0.6;
+}
+
+/* 아무것도 고르지 않았을 때 보여주는 지역이 어디 기준인지 (내 위치 / 지도 중심) */
+.autoRegionBadge {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #e8f5e9;
+  color: #2e7d32;
+}
