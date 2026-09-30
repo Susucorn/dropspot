@@ -35,13 +35,16 @@ export function toDistrictBin(record, group, coords, approximate) {
     출처: group.source,
     설치장소명: record.위치명 || '',
     시도명: group.sido,
-    시군구명: group.sgg,
+    // 행마다 "고양시 덕양구"처럼 구까지 들어오는 데이터는 그 값을 우선 사용
+    시군구명: record.시군구명 || group.sgg,
     소재지도로명주소: record.도로명주소 || coords.address || '',
     소재지지번주소: record.지번주소 || '',
     위도: String(coords.lat),
     경도: String(coords.lng),
     휴지통종류: record.종류 || '',
     설치대수: record.설치대수,
+    관리기관: record.관리기관 || '',
+    전화번호: record.전화번호 || '',
     대략적위치: approximate,
   };
 }

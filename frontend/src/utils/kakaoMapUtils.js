@@ -48,7 +48,8 @@ function keywordSearch(keyword) {
 // 장소 이름(예: "용호동 1-4 동생말 전망대")으로 시도해 볼 검색어 목록을 정확한 순서대로 만듦:
 // 원래 이름 → 번지/'산' 같은 주소 조각을 뺀 이름 → 동 이름까지 뺀 이름 → 끝 단어를 하나씩 줄인 이름
 function buildPlaceKeywords(placeName) {
-  const words = placeName.trim().split(/\s+/);
+  // "화전역앞-버스정류장-하행"처럼 하이픈으로 이어 쓴 이름은 띄어쓰기로 나눠서 검색
+  const words = placeName.trim().replace(/-/g, ' ').split(/\s+/);
   const cleaned = words.filter((w) => w !== '산' && !/^\d/.test(w));
   const withoutDong = cleaned.filter((w) => !/[동읍면리]$/.test(w));
   const candidates = [words.join(' '), cleaned.join(' '), withoutDong.join(' ')];
@@ -107,14 +108,29 @@ function isNear(a, b, km) {
 // 2) 주소가 없거나 못 찾으면 위치명으로만 장소 검색 (대략적인 위치)
 // 반환: { coords: { lat, lng, address }, approximate } 또는 못 찾으면 null
 export async function findDistrictBinCoords(record, group) {
+  // 데이터에 좌표가 들어 있으면(예: 고양시) 검색 없이 그대로 사용
+  const lat = parseFloat(record.위도);
+  const lng = parseFloat(record.경도);
+  if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
+    return { coords: { lat, lng, address: record.도로명주소 || record.지번주소 }, approximate: false };
+  }
+
   const region = `${shortSidoName(group.sido)} ${group.sgg}`;
   const place = record.위치명 ? await findPlaceCoords(record.위치명, region) : null;
 
+  // 주소에 시도/구 이름이 빠져 있으면 붙여서 검색 (예: "동구 ○○로 1" → "대구광역시 동구 ○○로 1").
+  // 분할/합병으로 없어진 번지(예: "화전동 545-2")는 부번을 뗀 본번 주소("화전동 545")로도 한 번 더 찾음
+  const addressCandidates = [];
   for (const address of [record.도로명주소, record.지번주소].filter(Boolean)) {
-    // 주소에 시도/구 이름이 빠져 있으면 붙여서 검색 (예: "동구 ○○로 1" → "대구광역시 동구 ○○로 1")
     const full = address.startsWith(shortSidoName(group.sido))
       ? address
       : `${group.sido} ${address.startsWith(group.sgg) ? '' : `${group.sgg} `}${address}`;
+    addressCandidates.push({ full, address });
+    const mainLot = full.replace(/(\d+)-\d+$/, '$1');
+    if (mainLot !== full) addressCandidates.push({ full: mainLot, address });
+  }
+
+  for (const { full, address } of addressCandidates) {
     try {
       const [lat, lng] = await geocodeAddress(full);
       const byAddress = { lat, lng, address };

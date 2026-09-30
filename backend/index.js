@@ -434,16 +434,41 @@ const DISTRICT_TRASHBIN_SOURCES = [
     sgg: '동구',
     url: 'https://api.odcloud.kr/api/15127640/v1/uddi:7e8c7561-a6b0-4a34-b86d-a282f1427a2c', // 20250519
   },
+  {
+    // 위도/경도가 들어 있어 좌표 변환 없이 바로 표시. 시군구명은 행마다 "고양시 덕양구"처럼 구까지 들어옴
+    id: 'goyang',
+    name: '경기도 고양시 가로변 쓰레기통 현황',
+    sido: '경기도',
+    sgg: '고양시',
+    url: 'https://api.odcloud.kr/api/15087918/v1/uddi:c29ea3d0-c314-463b-805f-908650a55db6', // 20250224
+  },
+  {
+    // 데이터 이름은 '전남광주통합특별시'지만 주소와 기존 휴지통 데이터·시도 선택 박스가 '광주광역시'라서 맞춤.
+    // 2022년 데이터라 대부분 기존 휴지통 데이터(2026년)에 이미 들어 있음 → 아래 중복 제거로 걸러짐
+    id: 'gwangju-gwangsan',
+    name: '전남광주통합특별시 광산구 쓰레기통 현황',
+    sido: '광주광역시',
+    sgg: '광산구',
+    url: 'https://api.odcloud.kr/api/15108027/v1/uddi:bb55f6e7-6040-4009-ae66-b7067e20d819', // 20221110
+  },
 ];
+// 좌표가 있는 구청 데이터 중, 기존 휴지통 데이터와 이 거리(km) 안에 겹치는 항목은 같은 쓰레기통으로 보고 제외
+const DUPLICATE_DISTANCE_KM = 0.015;
 const districtTrashbinData = {}; // { [source.id]: 정규화된 항목 배열 }
 
+// 좌표(위도/경도), 행별 시군구명, 관리기관/전화번호는 데이터에 있을 때만 채워짐 (없으면 빈 문자열)
 function normalizeDistrictTrashbin(row) {
   return {
-    위치명: pickField(row, ['위치명', '위치', '설치장소']),
-    도로명주소: pickField(row, ['설치위치 도로명주소', '도로명주소'], /도로명/),
-    지번주소: pickField(row, ['설치위치 지번주소', '지번주소'], /지번/),
-    종류: pickField(row, ['종류']),
+    위치명: pickField(row, ['위치명', '위치', '설치위치', '세부위치', '설치장소']),
+    도로명주소: pickField(row, ['설치위치 도로명주소', '도로명주소']),
+    지번주소: pickField(row, ['설치위치 지번주소', '지번주소', '설치주소']),
+    종류: pickField(row, ['종류', '쓰레기통종류']),
     설치대수: Number(pickField(row, ['설치대수', '설치 개수', '설치개수'], /설치.*(대수|개수)/)) || 1,
+    위도: pickField(row, ['위도']),
+    경도: pickField(row, ['경도']),
+    시군구명: pickField(row, ['시군구명']),
+    관리기관: pickField(row, ['관리기관', '관리기관명']),
+    전화번호: pickField(row, ['전화번호', '관리기관전화번호']),
   };
 }
 
@@ -457,8 +482,25 @@ async function loadDistrictTrashbinSource(source) {
     const hint = response.status === 401 ? ' (공공데이터포털에서 이 데이터 활용신청이 필요해요)' : '';
     throw new Error(`응답 오류 ${response.status}${hint}: ${JSON.stringify(data).slice(0, 200)}`);
   }
-  districtTrashbinData[source.id] = data.data.map(normalizeDistrictTrashbin).filter((r) => r.위치명 || r.도로명주소 || r.지번주소);
-  console.log(`${source.name} ${districtTrashbinData[source.id].length}건 로드 완료`);
+  const rows = data.data.map(normalizeDistrictTrashbin).filter((r) => r.위치명 || r.도로명주소 || r.지번주소);
+  const unique = rows.filter((r) => !isDuplicateOfTrashbin(r));
+  districtTrashbinData[source.id] = unique;
+  const skipped = rows.length - unique.length;
+  console.log(
+    `${source.name} ${unique.length}건 로드 완료${skipped ? ` (기존 휴지통 데이터와 겹치는 ${skipped}건 제외)` : ''}`
+  );
+}
+
+// 좌표가 있는 항목이 기존 휴지통 데이터(trashbin.json)의 쓰레기통과 같은 곳인지 (좌표가 없으면 판단 불가 → false)
+function isDuplicateOfTrashbin(row) {
+  const lat = parseFloat(row.위도);
+  const lng = parseFloat(row.경도);
+  if (isNaN(lat) || isNaN(lng)) return false;
+  return trashbinData.records.some((r) => {
+    const rLat = parseFloat(r.위도);
+    const rLng = parseFloat(r.경도);
+    return !isNaN(rLat) && !isNaN(rLng) && getDistance(lat, lng, rLat, rLng) <= DUPLICATE_DISTANCE_KM;
+  });
 }
 
 // 한 곳이 실패해도(예: 활용신청 전) 나머지 구청 데이터는 계속 불러옴

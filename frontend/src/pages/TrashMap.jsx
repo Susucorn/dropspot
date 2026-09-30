@@ -875,6 +875,7 @@ function TrashMap() {
                         {selectedBin.대략적위치 && (
                           <p className={styles.panelNote}>※ 장소 이름으로 찾은 대략적인 위치예요.</p>
                         )}
+                        {selectedBin.관리기관 && <p className={styles.panelMeta}>관리기관: {selectedBin.관리기관}</p>}
                         {selectedBin.전화번호 && <p className={styles.panelMeta}>전화: {selectedBin.전화번호}</p>}
                         {selectedBin.운영시간 && (
                           <p className={styles.panelMeta}>평일 운영: {selectedBin.운영시간}</p>
