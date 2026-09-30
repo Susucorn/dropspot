@@ -16,30 +16,6 @@ function LogoIcon() {
   );
 }
 
-function HeaderSearchIcon() {
-  return (
-    <svg
-      className={styles.headerSearchIcon}
-      viewBox="0 0 24 24"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-    >
-      <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
-      <line x1="16.65" y1="16.65" x2="21" y2="21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function UserIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 20c0-4.4 3.6-7 8-7s8 2.6 8 7" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 function App() {
   return (
     <BrowserRouter>
@@ -55,16 +31,6 @@ function App() {
               </span>
               <span className={styles.brandTagline}>내 주변 쓰레기통 찾고, 올바르게 분리배출해요</span>
             </div>
-          </div>
-
-          <div className={styles.headerActions}>
-            <div className={styles.headerSearch}>
-              <HeaderSearchIcon />
-              <input type="text" className={styles.headerSearchInput} placeholder="검색" />
-            </div>
-            <button type="button" className={styles.userMenuButton} aria-label="사용자 메뉴">
-              <UserIcon />
-            </button>
           </div>
         </header>
 
