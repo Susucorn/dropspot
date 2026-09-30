@@ -124,41 +124,56 @@
   list-style: none;
 }
 
+/* 지금 배출 가능한 품목: 한 줄 카드 (아이콘 · 품목명 · 배출 가능 시간) */
 .nowItem {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  border-radius: 14px;
-  background: #e8f5e9;
+  gap: 10px;
+  /* 여백·테두리를 포함한 전체 높이가 44px (content-box면 66px로 커져 버림) */
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid #c8e6c9;
+  border-radius: 12px;
+  background: #f1f8f1;
 }
 
 .nowIcon {
-  font-size: 28px;
+  flex-shrink: 0;
+  font-size: 20px;
   line-height: 1;
 }
 
 .nowName {
-  font-size: 19px;
-  font-weight: 800;
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 700;
   color: #1b3a1f;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
+/* 배출 가능 시간은 작은 초록 알약 모양으로 오른쪽에 */
 .nowUntil {
-  margin-left: auto;
-  font-size: 14px;
-  font-weight: 700;
+  flex-shrink: 0;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 600;
   color: #2e7d32;
   white-space: nowrap;
 }
 
 .nowEmpty {
   margin: 0;
-  padding: 18px 16px;
-  border-radius: 14px;
+  padding: 14px 16px;
+  border-radius: 12px;
   background: #f5f5f5;
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
   color: #666;
   text-align: center;
 }
