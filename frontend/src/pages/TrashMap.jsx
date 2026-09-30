@@ -5,6 +5,7 @@ import scheduleStyles from '../styles/WasteSchedule.module.css';
 import ScheduleResultCard from '../components/ScheduleResultCard';
 import ReportModal from '../components/ReportModal';
 import MobileBottomSheet from '../components/MobileBottomSheet';
+import LocationPermissionPrompt from '../components/LocationPermissionPrompt';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useWasteItemSearch, WasteItemSearchBox, WasteItemResults } from '../components/WasteItemSearch';
 import {
@@ -32,7 +33,7 @@ import {
   getRegionFromCoords,
   findDistrictBinCoords,
 } from '../utils/kakaoMapUtils';
-import { getCurrentLocation } from '../utils/geolocation';
+import { getCurrentLocation, getGeolocationPermission, watchGeolocationPermission } from '../utils/geolocation';
 import {
   isValid,
   dedupeScheduleResults,
@@ -43,6 +44,10 @@ import {
 import { CLUSTER_ZOOM_LEVEL, clusterBins } from '../utils/binClusterUtils';
 
 const INITIAL_MAP_LEVEL = 13;
+// 위치 권한 안내에서 '지역을 직접 선택할게요'를 고르면 같은 탭에서는 다시 묻지 않도록 기억 (sessionStorage)
+const LOCATION_PROMPT_SKIPPED_KEY = 'dropspot:locationPromptSkipped';
+const LOCATION_DENIED_MESSAGE = '위치 권한이 꺼져 있어요. 브라우저 설정에서 허용하면 내 주변 쓰레기통을 볼 수 있어요.';
+const LOCATION_NOT_SET_MESSAGE = '위치 권한을 허용하면 내 주변 쓰레기통을 볼 수 있어요.';
 const NEARBY_RADII_KM = [1, 3, 10];
 
 // 기본은 뚜껑 닫힌 회색 쓰레기통, 클릭된 아이콘만 뚜껑이 살짝 열리며 초록색으로 강조됨
@@ -282,6 +287,10 @@ function TrashMap() {
   const [myLocation, setMyLocation] = useState(null);
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState('');
+  // 앱을 처음 열 때 보여주는 위치 권한 안내 화면
+  const [showLocationPrompt, setShowLocationPrompt] = useState(false);
+  // 권한을 아직 정하지 않은 채 위치 요청 시간이 지났을 때, 뒤늦게 허용하면 다시 찾기 위한 구독 해제 함수
+  const permissionUnwatchRef = useRef(null);
   const [selectedBin, setSelectedBin] = useState(null);
   const [zoomLevel, setZoomLevel] = useState(INITIAL_MAP_LEVEL);
 
@@ -648,31 +657,111 @@ function TrashMap() {
     setPickedRegion(null);
     setSelectedBin(null);
     const loadId = ++loadIdRef.current;
+    stopWatchingPermission();
+
+    const applyLocation = (location) => {
+      if (loadId !== loadIdRef.current) return;
+      setMyLocation(location);
+      setLocating(false);
+      fetchNearestTrashbins(location[0], location[1])
+        .then(({ bins: found, radius }) => {
+          if (loadId !== loadIdRef.current) return;
+          setBins(found);
+          setBinScope({ type: 'radius', lat: location[0], lng: location[1], radiusKm: radius });
+          if (found.length === 0) setLocationError(`내 위치 ${radius}km 안에 휴지통 정보가 없어요.`);
+          // 재활용센터·의류수거함도 휴지통을 찾은 반경에 맞춰 찾음
+          loadFacilities(loadId, { type: 'radius', lat: location[0], lng: location[1], radiusKm: radius });
+        })
+        .catch(console.error);
+    };
+
     getCurrentLocation()
-      .then((location) => {
-        setMyLocation(location);
+      .then(applyLocation)
+      .catch(async (err) => {
+        if (loadId !== loadIdRef.current) return;
+        // err.code 1 = 사용자가 권한을 거절함 (브라우저 원문 메시지는 영어라 한국어 안내로 바꿔서 보여줌)
+        if (err.code === 1) {
+          setLocationError(LOCATION_DENIED_MESSAGE);
+          setLocating(false);
+          return;
+        }
+
+        // 시간 초과 등: 권한 창에서 아무것도 누르지 않고 있으면 제한 시간이 지나버림.
+        // 권한을 이미 허용한 경우(GPS가 느린 경우)엔 오류 문구 없이 정확도를 낮춰 한 번 더 조용히 시도
+        const permission = await getGeolocationPermission();
+        if (permission === 'granted') {
+          getCurrentLocation({ enableHighAccuracy: false, timeout: 20000, maximumAge: 5 * 60 * 1000 })
+            .then(applyLocation)
+            .catch(() => loadId === loadIdRef.current && setLocating(false));
+          return;
+        }
+
+        // 권한을 아직 정하지 않은 경우에만 안내 문구를 보여주고, 뒤늦게 허용을 누르면 자동으로 다시 찾음
+        setLocationError(LOCATION_NOT_SET_MESSAGE);
         setLocating(false);
-        fetchNearestTrashbins(location[0], location[1])
-          .then(({ bins: found, radius }) => {
-            if (loadId !== loadIdRef.current) return;
-            setBins(found);
-            setBinScope({ type: 'radius', lat: location[0], lng: location[1], radiusKm: radius });
-            if (found.length === 0) setLocationError(`내 위치 ${radius}km 안에 휴지통 정보가 없어요.`);
-            // 재활용센터·의류수거함도 휴지통을 찾은 반경에 맞춰 찾음
-            loadFacilities(loadId, { type: 'radius', lat: location[0], lng: location[1], radiusKm: radius });
-          })
-          .catch(console.error);
-      })
-      .catch((err) => {
-        setLocationError(`위치 정보를 가져오지 못했어요 (${err.message})`);
-        setLocating(false);
+        permissionUnwatchRef.current = watchGeolocationPermission((state) => {
+          if (state === 'granted') {
+            findMyLocation();
+          } else if (state === 'denied') {
+            stopWatchingPermission();
+            setLocationError(LOCATION_DENIED_MESSAGE);
+          }
+        });
       });
   };
 
-  // 페이지에 처음 들어오면 바로 내 위치를 가져와 지도 중심을 옮기고 마커를 표시
+  // 권한 상태 변경 구독을 해제 (새로 위치를 찾거나 화면을 떠날 때)
+  function stopWatchingPermission() {
+    permissionUnwatchRef.current?.();
+    permissionUnwatchRef.current = null;
+  }
+
+  useEffect(() => stopWatchingPermission, []);
+
+  // 페이지에 처음 들어오면 위치 권한 상태를 확인해서:
+  // - 이미 허용: 안내 없이 바로 내 위치로 시작
+  // - 이미 거절: 안내 화면 대신 설정 방법을 알려주고 지역별 보기로 시작
+  // - 아직 안 물어봄: 브라우저 권한 창보다 먼저 안내 화면(LocationPermissionPrompt)을 보여줌
+  //   (같은 탭에서 '직접 선택'을 고른 적이 있으면 다시 묻지 않음)
   useEffect(() => {
-    findMyLocation();
+    if (!navigator.geolocation) return;
+    const showPromptUnlessSkipped = () => {
+      let skipped = false;
+      try {
+        skipped = sessionStorage.getItem(LOCATION_PROMPT_SKIPPED_KEY) === '1';
+      } catch {
+        // 저장소를 쓸 수 없으면(사생활 보호 모드 등) 그냥 안내 화면을 보여줌
+      }
+      if (!skipped) setShowLocationPrompt(true);
+    };
+
+    if (!navigator.permissions?.query) {
+      showPromptUnlessSkipped();
+      return;
+    }
+    navigator.permissions
+      .query({ name: 'geolocation' })
+      .then((status) => {
+        if (status.state === 'granted') findMyLocation();
+        else if (status.state === 'denied') setLocationError(LOCATION_DENIED_MESSAGE);
+        else showPromptUnlessSkipped();
+      })
+      .catch(showPromptUnlessSkipped);
   }, []);
+
+  function handleAllowLocation() {
+    setShowLocationPrompt(false);
+    findMyLocation();
+  }
+
+  function handleSkipLocation() {
+    setShowLocationPrompt(false);
+    try {
+      sessionStorage.setItem(LOCATION_PROMPT_SKIPPED_KEY, '1');
+    } catch {
+      // 저장하지 못해도 이번 화면에서는 닫힘
+    }
+  }
 
   if (loading) return <div>지도를 불러오는 중...</div>;
   if (error) return <div>지도를 불러오지 못했어요. 카카오 앱 키/도메인 등록을 확인해주세요.</div>;
@@ -1195,6 +1284,8 @@ function TrashMap() {
           }
         />
       )}
+
+      {showLocationPrompt && <LocationPermissionPrompt onAllow={handleAllowLocation} onSkip={handleSkipLocation} />}
 
       {reportTarget && (
         <ReportModal
