@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Map, CustomOverlayMap, useKakaoLoader } from 'react-kakao-maps-sdk';
 import styles from '../styles/TrashMap.module.css';
 import scheduleStyles from '../styles/WasteSchedule.module.css';
-import ScheduleResultCard from '../components/ScheduleResultCard';
+import SchedulePanelContent from '../components/SchedulePanelContent';
 import ReportModal from '../components/ReportModal';
 import MobileBottomSheet from '../components/MobileBottomSheet';
 import LocationPermissionPrompt from '../components/LocationPermissionPrompt';
@@ -305,8 +305,7 @@ function TrashMap() {
   const [pickedRegion, setPickedRegion] = useState(null);
   const [geocodeError, setGeocodeError] = useState('');
 
-  // 오른쪽 패널 상단 탭: '배출 규칙 안내'(지역 검색) / '배출품목 찾기'(품목 검색)
-  const [activeTab, setActiveTab] = useState('schedule');
+  // '품목 찾기' 탭의 배출품목 검색 상태 (탭 전환은 SchedulePanelContent 안에서 관리)
   const itemSearch = useWasteItemSearch();
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   // 신고 폼에 넘길 { location, manager }. null이면 폼이 닫힌 상태
@@ -854,11 +853,19 @@ function TrashMap() {
           name: selectedBin.시설명 || selectedBin.설치장소명 || BIN_KIND_LABELS[kind],
           lines: [
             selectedBin.소재지도로명주소 || selectedBin.소재지지번주소,
-            selectedBin.세부위치,
-            selectedBin.운영시간 && `평일 ${selectedBin.운영시간}`,
+            selectedBin.휴지통종류 && `종류: ${formatBinType(selectedBin.휴지통종류)}`,
+            selectedBin.설치대수 > 1 && `설치 대수: ${selectedBin.설치대수}대`,
+            selectedBin.세부위치 && `세부 위치: ${selectedBin.세부위치}`,
+            selectedBin.관리기관 && `관리기관: ${selectedBin.관리기관}`,
             selectedBin.전화번호 && `☎ ${selectedBin.전화번호}`,
-            selectedBin.distance !== undefined && `약 ${(selectedBin.distance * 1000).toFixed(0)}m`,
+            selectedBin.운영시간 && `평일 운영: ${selectedBin.운영시간}`,
+            selectedBin.휴일운영시간 && `휴일 운영: ${selectedBin.휴일운영시간}`,
+            selectedBin.휴무일 && `휴무일: ${selectedBin.휴무일}`,
+            selectedBin.취급품목 && `취급 품목: ${selectedBin.취급품목}`,
+            selectedBin.distance !== undefined && `거리: 약 ${(selectedBin.distance * 1000).toFixed(0)}m`,
+            selectedBin.출처 && `출처: ${selectedBin.출처}`,
           ],
+          note: selectedBin.대략적위치 ? '※ 장소 이름으로 찾은 대략적인 위치예요.' : null,
         };
       })()
     : null;
@@ -867,6 +874,32 @@ function TrashMap() {
     : pickedRegion
       ? pickedRegion.label
       : 'auto';
+
+  // 배출 규칙 패널 내용(SchedulePanelContent)에 넘길 값: 모바일 하단 패널과 데스크톱 오른쪽 패널 공통
+  const schedulePanelProps = {
+    place: sheetPlace,
+    records: scheduleResults,
+    getRecordTitle: getScheduleCardTitle,
+    loading: scheduleLoading,
+    error: scheduleError,
+    showSchedule: !hideSchedule,
+    selectionKey: sheetSelectionKey,
+    emptyMessage: hasScheduleTarget
+      ? '이 지역의 배출 규칙 정보가 없어요.'
+      : '지역을 검색하거나 지도에서 쓰레기통을 누르면 배출 규칙을 보여드려요.',
+    onReport: openReport,
+    itemSearchContent: (
+      <>
+        <WasteItemSearchBox query={itemSearch.query} setQuery={itemSearch.setQuery} runSearch={itemSearch.runSearch} />
+        <WasteItemResults
+          query={itemSearch.query}
+          items={itemSearch.items}
+          loading={itemSearch.loading}
+          error={itemSearch.error}
+        />
+      </>
+    ),
+  };
 
   return (
     <div className={styles.mapWrap}>
@@ -1086,168 +1119,39 @@ function TrashMap() {
         </button>
 
         <div className={`${styles.sidePanel} ${panelCollapsed ? styles.sidePanelCollapsed : ''}`}>
-        <div className={styles.panelTabs}>
-          <button
-            type="button"
-            className={activeTab === 'schedule' ? styles.panelTabActive : styles.panelTab}
-            onClick={() => setActiveTab('schedule')}
-          >
-            배출 규칙 안내
-          </button>
-          <button
-            type="button"
-            className={activeTab === 'item' ? styles.panelTabActive : styles.panelTab}
-            onClick={() => setActiveTab('item')}
-          >
-            배출품목 찾기
-          </button>
+        <div className={styles.panelSearchArea}>
+          <div className={scheduleStyles.searchCard}>{regionSearchRow}</div>
+          {geocodeError && <div className={styles.errorText}>{geocodeError}</div>}
         </div>
 
-        {activeTab === 'schedule' && (
-          <>
-            <div className={styles.panelSearchArea}>
-              <div className={scheduleStyles.searchCard}>
-                {regionSearchRow}
+        <div className={styles.panelResults}>
+          {hasScheduleTarget && (
+            <div className={styles.panelResultHeader}>
+              <div>
+                {/* 아무것도 고르지 않았을 때는 내 위치(또는 지도 중심) 지역 기준임을 표시 */}
+                {!hasSelection && (
+                  <span className={styles.autoRegionBadge}>{myLocation ? '내 위치 기준' : '지도 중심 기준'}</span>
+                )}
+                <h3 className={styles.panelTitle}>{sheetTitle}</h3>
               </div>
-              {geocodeError && <div className={styles.errorText}>{geocodeError}</div>}
-            </div>
-
-            <div className={styles.panelResults}>
-              {!hasScheduleTarget && (
-                <p className={styles.panelPlaceholder}>
-                  지역을 검색하거나 지도에서 휴지통 아이콘을 클릭하면
-                  <br />
-                  배출 규칙을 보여드려요.
-                </p>
-              )}
-
-              {hasScheduleTarget && (
-                <>
-                  <div className={styles.panelResultHeader}>
-                    {!hasSelection ? (
-                      // 아무것도 고르지 않았을 때: 내 위치(또는 지도 중심) 지역의 배출 규칙을 바로 보여줌
-                      <div>
-                        <span className={styles.autoRegionBadge}>{myLocation ? '내 위치 기준' : '지도 중심 기준'}</span>
-                        <h3 className={styles.panelTitle}>{autoRegionLabel}</h3>
-                      </div>
-                    ) : selectedBin ? (
-                      <div>
-                        {(() => {
-                          const kind = getBinKind(selectedBin);
-                          const badgeClass = KIND_BADGE_CLASS[kind];
-                          return (
-                            <>
-                              <span className={badgeClass}>{BIN_KIND_LABELS[kind]}</span>
-                              <h3 className={styles.panelTitle}>
-                                {selectedBin.시설명 || selectedBin.설치장소명 || BIN_KIND_LABELS[kind]}
-                              </h3>
-                            </>
-                          );
-                        })()}
-                        <p className={styles.panelMeta}>
-                          {selectedBin.소재지도로명주소 || selectedBin.소재지지번주소}
-                        </p>
-                        {selectedBin.휴지통종류 && (
-                          <p className={styles.panelMeta}>종류: {formatBinType(selectedBin.휴지통종류)}</p>
-                        )}
-                        {selectedBin.설치대수 > 1 && (
-                          <p className={styles.panelMeta}>설치 대수: {selectedBin.설치대수}대</p>
-                        )}
-                        {selectedBin.출처 && <p className={styles.panelMeta}>출처: {selectedBin.출처}</p>}
-                        {selectedBin.대략적위치 && (
-                          <p className={styles.panelNote}>※ 장소 이름으로 찾은 대략적인 위치예요.</p>
-                        )}
-                        {selectedBin.세부위치 && <p className={styles.panelMeta}>세부 위치: {selectedBin.세부위치}</p>}
-                        {selectedBin.관리기관 && <p className={styles.panelMeta}>관리기관: {selectedBin.관리기관}</p>}
-                        {selectedBin.전화번호 && <p className={styles.panelMeta}>전화: {selectedBin.전화번호}</p>}
-                        {selectedBin.운영시간 && (
-                          <p className={styles.panelMeta}>평일 운영: {selectedBin.운영시간}</p>
-                        )}
-                        {selectedBin.휴일운영시간 && (
-                          <p className={styles.panelMeta}>휴일 운영: {selectedBin.휴일운영시간}</p>
-                        )}
-                        {selectedBin.휴무일 && <p className={styles.panelMeta}>휴무일: {selectedBin.휴무일}</p>}
-                        {selectedBin.취급품목 && (
-                          <p className={styles.panelMeta}>취급 품목: {selectedBin.취급품목}</p>
-                        )}
-                        {selectedBin.distance !== undefined && (
-                          <p className={styles.panelMeta}>
-                            거리: 약 {(selectedBin.distance * 1000).toFixed(0)}m
-                          </p>
-                        )}
-                      </div>
-                    ) : (
-                      <h3 className={styles.panelTitle}>{pickedRegion.label}</h3>
-                    )}
-                    {hasSelection && (
-                      <button
-                        className={styles.closeButton}
-                        onClick={() => {
-                          setSelectedBin(null);
-                          setPickedRegion(null);
-                        }}
-                        aria-label="지우기"
-                      >
-                        ×
-                      </button>
-                    )}
-                  </div>
-
-                  {/* 재활용센터·의류수거함은 집 앞 배출 시간표와 관계없어서 시설 정보만 보여줌 */}
-                  {!hideSchedule && (
-                    <>
-                      <hr className={styles.panelDivider} />
-
-                      <h4 className={styles.panelSubtitle}>
-                        {selectedBin
-                          ? `${selectedBin.시도명} ${selectedBin.시군구명}`
-                          : pickedRegion
-                            ? `${pickedRegion.ctpv} ${pickedRegion.sgg}`
-                            : autoRegionLabel}{' '}
-                        배출 규칙 안내
-                      </h4>
-
-                      {scheduleLoading && <p>불러오는 중...</p>}
-                      {scheduleError && <p className={scheduleStyles.errorText}>{scheduleError}</p>}
-                      {!scheduleLoading && !scheduleError && scheduleResults.length === 0 && (
-                        <p>해당 지역 배출 규칙 정보가 없어요.</p>
-                      )}
-
-                      {scheduleResults.map((r, idx) => (
-                        <ScheduleResultCard
-                          key={idx}
-                          title={`${scheduleResults.length > 1 ? `${idx + 1}. ` : ''}${getScheduleCardTitle(r)}`}
-                          record={r}
-                          onReport={openReport}
-                        />
-                      ))}
-                    </>
-                  )}
-                </>
+              {hasSelection && (
+                <button
+                  className={styles.closeButton}
+                  onClick={() => {
+                    setSelectedBin(null);
+                    setPickedRegion(null);
+                  }}
+                  aria-label="선택 해제"
+                >
+                  ×
+                </button>
               )}
             </div>
-          </>
-        )}
+          )}
 
-        {activeTab === 'item' && (
-          <>
-            <div className={styles.panelSearchArea}>
-              <WasteItemSearchBox
-                query={itemSearch.query}
-                setQuery={itemSearch.setQuery}
-                runSearch={itemSearch.runSearch}
-              />
-            </div>
-            <div className={styles.panelResults}>
-              <WasteItemResults
-                query={itemSearch.query}
-                items={itemSearch.items}
-                loading={itemSearch.loading}
-                error={itemSearch.error}
-              />
-            </div>
-          </>
-        )}
+          {/* 모바일 하단 패널과 같은 내용: 선택한 곳 정보 + 오늘 배출 / 전체 규칙 보기 / 품목 찾기 탭 */}
+          <SchedulePanelContent {...schedulePanelProps} />
+        </div>
         </div>
       </div>
       )}
@@ -1255,33 +1159,11 @@ function TrashMap() {
       {isMobile && (
         <MobileBottomSheet
           title={sheetTitle}
-          place={sheetPlace}
-          records={scheduleResults}
-          getRecordTitle={getScheduleCardTitle}
-          loading={scheduleLoading}
-          error={scheduleError}
-          showSchedule={!hideSchedule}
-          selectionKey={sheetSelectionKey}
           onClearSelection={() => {
             setSelectedBin(null);
             setPickedRegion(null);
           }}
-          onReport={openReport}
-          itemSearchContent={
-            <>
-              <WasteItemSearchBox
-                query={itemSearch.query}
-                setQuery={itemSearch.setQuery}
-                runSearch={itemSearch.runSearch}
-              />
-              <WasteItemResults
-                query={itemSearch.query}
-                items={itemSearch.items}
-                loading={itemSearch.loading}
-                error={itemSearch.error}
-              />
-            </>
-          }
+          {...schedulePanelProps}
         />
       )}
 

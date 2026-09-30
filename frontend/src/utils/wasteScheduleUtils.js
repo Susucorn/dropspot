@@ -67,11 +67,11 @@ export function formatItemList(text) {
 
 export const DAYS = ['월', '화', '수', '목', '금', '토', '일'];
 
-// 품목별 아이콘/색상 클래스 (WasteSchedule.module.css의 클래스명, 없는 카테고리는 기본값으로 대체)
+// 품목별 아이콘 (없는 카테고리는 화면에서 기본 아이콘으로 대체)
 export const CATEGORY_META = {
-  음식물쓰레기: { icon: '🍚', className: 'catFood' },
-  일반쓰레기: { icon: '🗑️', className: 'catGeneral' },
-  재활용품: { icon: '♻️', className: 'catRecycle' },
+  음식물쓰레기: { icon: '🍚' },
+  일반쓰레기: { icon: '🗑️' },
+  재활용품: { icon: '♻️' },
 };
 
 function parseDays(dowStr) {
