@@ -440,15 +440,21 @@ function TrashMap() {
     const sgg = selectedBin ? selectedBin.시군구명 : pickedRegion ? pickedRegion.sgg : fallback?.sgg;
     const dong = selectedBin ? null : pickedRegion ? pickedRegion.dong || null : null;
 
-    if (!ctpv || !sgg) {
+    // 시군구는 비어 있을 수 있음 (세종특별자치시처럼 시군구가 없는 시도 → 서버가 시도 기준으로 찾음)
+    if (!ctpv) {
       setScheduleResults([]);
       setScheduleError('');
+      setScheduleLoading(false);
       return;
     }
+    // 쓰레기통을 연달아 누르거나 지도를 움직여 지역이 빠르게 바뀔 때, 늦게 도착한 이전 지역의 응답이
+    // 최신 결과를 덮어쓰지 않도록 이 요청이 아직 최신인지 확인
+    let cancelled = false;
     setScheduleLoading(true);
     setScheduleError('');
     fetchSchedule(ctpv, sgg)
       .then((data) => {
+        if (cancelled) return;
         const all = Array.isArray(data) ? data : [];
         const filtered = dong
           ? all.filter(
@@ -461,9 +467,13 @@ function TrashMap() {
         setScheduleLoading(false);
       })
       .catch(() => {
+        if (cancelled) return;
         setScheduleError('배출 규칙을 불러오지 못했어요.');
         setScheduleLoading(false);
       });
+    return () => {
+      cancelled = true;
+    };
   }, [selectedBin, pickedRegion, autoRegion]);
 
   // 데스크톱 ↔ 모바일 레이아웃이 바뀌면 지도 영역 크기가 달라지므로 카카오 지도에 다시 계산하게 함
@@ -869,11 +879,13 @@ function TrashMap() {
         };
       })()
     : null;
+  // 선택이 바뀔 때마다 달라지는 값 (바뀌면 관리구역 선택이 첫 구역으로 돌아감).
+  // 아무것도 고르지 않았을 때도 지도를 옮겨 기준 지역이 바뀌면 값이 달라지도록 지역 이름을 포함
   const sheetSelectionKey = selectedBin
     ? `${selectedBin.위도},${selectedBin.경도},${selectedBin.시설명 || selectedBin.설치장소명}`
     : pickedRegion
       ? pickedRegion.label
-      : 'auto';
+      : `auto:${autoRegionLabel}`;
 
   // 배출 규칙 패널 내용(SchedulePanelContent)에 넘길 값: 모바일 하단 패널과 데스크톱 오른쪽 패널 공통
   const schedulePanelProps = {

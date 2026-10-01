@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import styles from '../styles/WasteSchedule.module.css';
 import { fetchWasteItems } from '../api/wasteRecyclingApi';
 
@@ -26,8 +26,12 @@ export function useWasteItemSearch() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // 검색할 때마다 번호를 매겨서, "페트" → "페트병"처럼 이어서 칠 때 늦게 도착한 이전 검색어의 결과나
+  // 검색어를 지운 뒤 도착한 결과가 화면을 덮어쓰지 않게 함
+  const searchIdRef = useRef(0);
 
   function runSearch(q) {
+    const searchId = ++searchIdRef.current;
     const trimmed = q.trim();
     if (!trimmed) {
       setItems([]);
@@ -39,10 +43,12 @@ export function useWasteItemSearch() {
     setError('');
     fetchWasteItems(trimmed)
       .then((data) => {
+        if (searchId !== searchIdRef.current) return;
         setItems(Array.isArray(data) ? data : []);
         setLoading(false);
       })
       .catch(() => {
+        if (searchId !== searchIdRef.current) return;
         setError('배출품목 정보를 불러오지 못했어요.');
         setLoading(false);
       });
