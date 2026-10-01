@@ -202,7 +202,7 @@
   color: #888;
 }
 
-/* ── 전체 규칙 보기: 요일 × 품목 표 ── */
+/* ── 배출 시간표 보기: 요일 × 품목 표 ── */
 .table {
   width: 100%;
   border-collapse: collapse;

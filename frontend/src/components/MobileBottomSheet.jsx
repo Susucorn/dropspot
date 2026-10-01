@@ -93,7 +93,7 @@ function MobileBottomSheet({ title, onClearSelection, ...contentProps }) {
       </div>
 
       <div className={styles.body}>
-        {/* '전체 규칙 보기' 탭을 누르면 표가 잘 보이도록 패널을 끝까지 올림 */}
+        {/* '배출 시간표 보기' 탭을 누르면 표가 잘 보이도록 패널을 끝까지 올림 */}
         <SchedulePanelContent {...contentProps} onOpenWeek={() => setSnap('full')} />
       </div>
     </section>

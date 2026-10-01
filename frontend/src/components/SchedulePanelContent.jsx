@@ -25,7 +25,7 @@ function formatTime(date) {
 }
 
 // 배출 규칙 패널 내용 (모바일 하단 패널과 데스크톱 오른쪽 패널에서 공통으로 사용).
-// 선택한 쓰레기통/시설 정보 + 탭 3개: 오늘 배출(지금 배출 가능 품목) / 전체 규칙 보기(요일 × 품목 표) / 품목 찾기
+// 선택한 쓰레기통/시설 정보 + 탭 3개: 오늘 배출(지금 배출 가능 품목) / 배출 시간표 보기(요일 × 품목 표) / 품목 찾기
 //
 // props
 // - place: 선택한 쓰레기통/시설 정보 { badge, badgeClass, name, lines: [문자열], note } 또는 null
@@ -35,7 +35,7 @@ function formatTime(date) {
 // - selectionKey: 선택이 바뀔 때마다 달라지는 값 (바뀌면 첫 관리구역부터 보여줌)
 // - onReport(record): 쓰레기통 신고 (없으면 신고 버튼 숨김)
 // - itemSearchContent: '품목 찾기' 탭에 보여줄 배출품목 검색 화면
-// - onOpenWeek: '전체 규칙 보기' 탭을 눌렀을 때 추가로 할 일 (모바일은 패널을 끝까지 올림)
+// - onOpenWeek: '배출 시간표 보기' 탭을 눌렀을 때 추가로 할 일 (모바일은 패널을 끝까지 올림)
 // - emptyMessage: 보여줄 배출 규칙이 없을 때 문구
 function SchedulePanelContent({
   place,
@@ -66,7 +66,7 @@ function SchedulePanelContent({
     ...(showSchedule
       ? [
           { key: 'today', label: '오늘 배출' },
-          { key: 'week', label: '전체 규칙 보기' },
+          { key: 'week', label: '배출 시간표 보기' },
         ]
       : []),
     { key: 'item', label: '품목 찾기' },
@@ -210,7 +210,7 @@ function TodayView({ record, now }) {
   );
 }
 
-// '전체 규칙 보기' 탭: 요일(행) × 품목(열) 표. 오늘 요일은 강조
+// '배출 시간표 보기' 탭: 요일(행) × 품목(열) 표. 오늘 요일은 강조
 function WeekView({ record, now }) {
   const categories = getScheduleCategories(record).map((c) => c.name);
   const rows = buildWeeklyRows(record);

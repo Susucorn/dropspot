@@ -1161,7 +1161,7 @@ function TrashMap() {
             </div>
           )}
 
-          {/* 모바일 하단 패널과 같은 내용: 선택한 곳 정보 + 오늘 배출 / 전체 규칙 보기 / 품목 찾기 탭 */}
+          {/* 모바일 하단 패널과 같은 내용: 선택한 곳 정보 + 오늘 배출 / 배출 시간표 보기 / 품목 찾기 탭 */}
           <SchedulePanelContent {...schedulePanelProps} />
         </div>
         </div>
