@@ -6,6 +6,9 @@ const path = require('path');
 
 const app = express();
 app.use(cors());
+// Render 같은 배포 환경은 앞단 프록시를 거쳐 요청이 들어오므로, 신고 횟수 제한에 쓸 실제 사용자 IP를
+// X-Forwarded-For에서 읽도록 함 (프록시 1단계만 신뢰)
+app.set('trust proxy', 1);
 
 // ── 휴지통 데이터 (로컬 파일) ──────────────────────────────
 const trashbinData = JSON.parse(
@@ -130,10 +133,7 @@ async function loadRecyclingCenterData() {
     process.env.RECYCLING_CENTER_SERVICE_KEY ||
     process.env.HOUSEHOLD_WASTE_SERVICE_KEY ||
     process.env.WASTE_ITEM_SERVICE_KEY;
-  if (!serviceKey) {
-    console.error('❌ 재활용센터 API 인증키가 .env에 없어요!');
-    return;
-  }
+  if (!serviceKey) throw new Error('재활용센터 API 인증키가 .env에 없어요!');
 
   const numOfRows = 1000;
   let pageNo = 1;
@@ -154,8 +154,7 @@ async function loadRecyclingCenterData() {
     try {
       data = JSON.parse(text);
     } catch {
-      console.error('❌ 재활용센터 API 응답이 JSON이 아니에요:', text.slice(0, 300));
-      break;
+      throw new Error(`재활용센터 API 응답이 JSON이 아니에요: ${text.slice(0, 200)}`);
     }
 
     if (pageNo === 1) {
@@ -166,8 +165,7 @@ async function loadRecyclingCenterData() {
     const root = data?.response ?? data;
     const body = root?.body;
     if (!body) {
-      console.error('❌ 재활용센터 body가 없어요. 응답 헤더:', root?.header);
-      break;
+      throw new Error(`재활용센터 응답에 body가 없어요: ${JSON.stringify(root?.header ?? data).slice(0, 200)}`);
     }
     totalCount = Number(body.totalCount) || 0;
     // 표준데이터 API는 items가 바로 배열이지만, 다른 API처럼 items.item 형태일 수도 있어 둘 다 처리
@@ -261,10 +259,7 @@ function normalizeClothingBin(item) {
 
 async function loadClothingBinData() {
   const serviceKey = process.env.HOUSEHOLD_WASTE_SERVICE_KEY;
-  if (!serviceKey) {
-    console.error('❌ 의류수거함 API 인증키(HOUSEHOLD_WASTE_SERVICE_KEY)가 .env에 없어요!');
-    return;
-  }
+  if (!serviceKey) throw new Error('의류수거함 API 인증키(HOUSEHOLD_WASTE_SERVICE_KEY)가 .env에 없어요!');
 
   const numOfRows = 1000;
   let pageNo = 1;
@@ -277,10 +272,7 @@ async function loadClothingBinData() {
     const data = await response.json().catch(() => null);
     // 이 API도 재활용센터 API처럼 response 래퍼 없이 { header, body }를 바로 내려줌
     const body = (data?.response ?? data)?.body;
-    if (!body) {
-      console.error('❌ 의류수거함 응답 형식이 달라요:', JSON.stringify(data).slice(0, 300));
-      break;
-    }
+    if (!body) throw new Error(`의류수거함 응답 형식이 달라요: ${JSON.stringify(data).slice(0, 200)}`);
     totalCount = Number(body.totalCount) || 0;
     const rawItems = Array.isArray(body.items) ? body.items : body.items?.item || [];
     const items = Array.isArray(rawItems) ? rawItems : [rawItems];
@@ -302,10 +294,7 @@ let wasteScheduleData = [];
 
 async function loadWasteScheduleData() {
   const serviceKey = process.env.HOUSEHOLD_WASTE_SERVICE_KEY;
-  if (!serviceKey) {
-    console.error('❌ HOUSEHOLD_WASTE_SERVICE_KEY가 .env에 없어요!');
-    return;
-  }
+  if (!serviceKey) throw new Error('HOUSEHOLD_WASTE_SERVICE_KEY가 .env에 없어요!');
 
   const numOfRows = 1000;
   let pageNo = 1;
@@ -318,17 +307,14 @@ async function loadWasteScheduleData() {
     )}&pageNo=${pageNo}&numOfRows=${numOfRows}&returnType=json`;
 
     const response = await fetch(url);
-    const data = await response.json();
+    const data = await response.json().catch(() => null);
 
     if (pageNo === 1) {
       console.log('🔍 배출정보 API 응답 확인:', JSON.stringify(data).slice(0, 500));
     }
 
     const body = data?.response?.body;
-    if (!body) {
-      console.error('❌ body가 없어요. 응답 헤더:', data?.response?.header);
-      break;
-    }
+    if (!body) throw new Error(`배출정보 응답에 body가 없어요: ${JSON.stringify(data?.response?.header ?? data).slice(0, 200)}`);
     totalCount = body.totalCount;
     const items = body.items?.item || [];
     if (items.length === 0) break;
@@ -427,19 +413,27 @@ function findScheduleRecords(ctpv, sgg) {
   const ctpvCandidates = [ctpv, ...(CTPV_ALIASES[ctpv] || [])];
   for (const c of ctpvCandidates) {
     const inCtpv = wasteScheduleData.filter((r) => r.CTPV_NM === c);
-    const exact = inCtpv.filter((r) => r.SGG_NM === sgg);
-    if (exact.length > 0) return exact;
-    const normalized = normalizeSggName(sgg);
-    const loose = inCtpv.filter((r) => normalizeSggName(r.SGG_NM) === normalized);
-    if (loose.length > 0) return loose;
+    if (inCtpv.length === 0) continue;
+    if (sgg) {
+      const exact = inCtpv.filter((r) => r.SGG_NM === sgg);
+      if (exact.length > 0) return exact;
+      const normalized = normalizeSggName(sgg);
+      const loose = inCtpv.filter((r) => normalizeSggName(r.SGG_NM) === normalized);
+      if (loose.length > 0) return loose;
+    }
+    // 세종특별자치시처럼 시군구가 하나뿐인 시도: 카카오는 시군구를 빈 값으로 주고 배출 규칙 데이터는
+    // "없음"으로 적혀 있어서 이름으로는 못 맞춤 → 시도 안의 규칙을 그대로 사용
+    if (new Set(inCtpv.map((r) => r.SGG_NM)).size === 1) return inCtpv;
   }
   return [];
 }
 
+// 시군구는 비어 있을 수 있음 (세종특별자치시처럼 시군구가 없는 시도)
 app.get('/api/waste-schedule', (req, res) => {
-  const { ctpv, sgg } = req.query;
-  if (!ctpv || !sgg) {
-    return res.status(400).json({ error: '시도와 시군구를 선택해주세요.' });
+  const ctpv = String(req.query.ctpv || '').trim();
+  const sgg = String(req.query.sgg || '').trim();
+  if (!ctpv) {
+    return res.status(400).json({ error: '시도를 선택해주세요.' });
   }
   res.json(findScheduleRecords(ctpv, sgg));
 });
@@ -603,13 +597,20 @@ function isDuplicateOfTrashbin(row) {
   });
 }
 
-// 한 곳이 실패해도(예: 활용신청 전) 나머지 구청 데이터는 계속 불러옴
+// 아직 못 불러온 구청 데이터만 불러옴. 한 곳이 실패해도(예: 활용신청 전) 나머지는 계속 불러오고,
+// 실패한 곳이 남아 있으면 에러를 던져서 나중에 그 구청만 다시 시도하게 함
 async function loadDistrictTrashbinData() {
+  const pending = DISTRICT_TRASHBIN_SOURCES.filter((s) => !districtTrashbinData[s.id]);
+  const failed = [];
   await Promise.all(
-    DISTRICT_TRASHBIN_SOURCES.map((source) =>
-      loadDistrictTrashbinSource(source).catch((err) => console.error(`❌ ${source.name} 로드 실패:`, err.message))
+    pending.map((source) =>
+      loadDistrictTrashbinSource(source).catch((err) => {
+        failed.push(source.name);
+        console.error(`❌ ${source.name} 로드 실패:`, err.message);
+      })
     )
   );
+  if (failed.length > 0) throw new Error(`아직 못 불러온 구청: ${failed.join(', ')}`);
 }
 
 app.get('/api/district-trashbins', (req, res) => {
@@ -631,10 +632,62 @@ const REPORTS_FILE = path.join(__dirname, 'data', 'reports.json');
 const REPORT_UPLOAD_DIR = path.join(__dirname, 'uploads', 'reports');
 const PHOTO_EXTENSIONS = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
 
+// 남용 방지: IP당 일정 시간 안에 보낼 수 있는 신고 수, 서버에 저장하는 사진 총용량 제한
+const REPORT_RATE_LIMIT = { max: 5, windowMs: 10 * 60 * 1000 };
+const REPORT_UPLOAD_MAX_TOTAL_BYTES = 500 * 1024 * 1024;
+const reportTimesByIp = new Map(); // { ip: [신고 시각, ...] }
+let uploadedBytesTotal = null; // 처음 필요할 때 폴더 크기를 계산해 두고 이후에는 더해감
+
+function isRateLimited(ip, now = Date.now()) {
+  const recent = (reportTimesByIp.get(ip) || []).filter((t) => now - t < REPORT_RATE_LIMIT.windowMs);
+  if (recent.length >= REPORT_RATE_LIMIT.max) {
+    reportTimesByIp.set(ip, recent);
+    return true;
+  }
+  recent.push(now);
+  reportTimesByIp.set(ip, recent);
+  return false;
+}
+
+// 오래된 기록은 주기적으로 지워서 메모리가 계속 늘지 않게 함
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, times] of reportTimesByIp) {
+    if (times.every((t) => now - t >= REPORT_RATE_LIMIT.windowMs)) reportTimesByIp.delete(ip);
+  }
+}, REPORT_RATE_LIMIT.windowMs).unref();
+
+function getUploadedBytesTotal() {
+  if (uploadedBytesTotal === null) {
+    uploadedBytesTotal = fs.existsSync(REPORT_UPLOAD_DIR)
+      ? fs.readdirSync(REPORT_UPLOAD_DIR).reduce((sum, f) => sum + fs.statSync(path.join(REPORT_UPLOAD_DIR, f)).size, 0)
+      : 0;
+  }
+  return uploadedBytesTotal;
+}
+
+// 신고 파일이 깨져 있으면(예: 예전에 저장 도중 서버가 꺼짐) 따로 백업해 두고 새로 시작
 function readReports() {
   if (!fs.existsSync(REPORTS_FILE)) return [];
-  return JSON.parse(fs.readFileSync(REPORTS_FILE, 'utf-8'));
+  try {
+    const parsed = JSON.parse(fs.readFileSync(REPORTS_FILE, 'utf-8'));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    const backup = REPORTS_FILE.replace(/\.json$/, `.broken-${Date.now()}.json`);
+    fs.renameSync(REPORTS_FILE, backup);
+    console.error(`❌ 신고 파일이 깨져 있어 ${path.basename(backup)}로 백업하고 새로 시작해요:`, err.message);
+    return [];
+  }
 }
+
+// 임시 파일에 다 쓴 뒤 이름을 바꿔서, 쓰는 도중 서버가 꺼져도 기존 신고 파일이 깨지지 않게 함
+function writeReports(reports) {
+  const tmp = `${REPORTS_FILE}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(reports, null, 2), 'utf-8');
+  fs.renameSync(tmp, REPORTS_FILE);
+}
+
+const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 // "data:image/png;base64,...." 형태의 사진을 검사해서 { ext, buffer }로 변환. 형식이 잘못되면 에러
 function decodePhoto(dataUrl) {
@@ -649,8 +702,17 @@ function decodePhoto(dataUrl) {
 }
 
 app.post('/api/reports', express.json({ limit: '25mb' }), (req, res) => {
-  const { status, memo = '', location = {}, manager = {}, photos = [] } = req.body || {};
+  // 값이 null이거나 형식이 다르게 와도(직접 API를 호출한 경우 등) 500 대신 400으로 안내하도록 기본값으로 바꿈
+  const body = isPlainObject(req.body) ? req.body : {};
+  const status = body.status;
+  const memo = typeof body.memo === 'string' ? body.memo : '';
+  const location = isPlainObject(body.location) ? body.location : {};
+  const manager = isPlainObject(body.manager) ? body.manager : {};
+  const photos = body.photos ?? [];
 
+  if (isRateLimited(req.ip)) {
+    return res.status(429).json({ error: '신고를 너무 자주 보냈어요. 10분 뒤에 다시 시도해 주세요.' });
+  }
   if (!REPORT_STATUSES.includes(status)) {
     return res.status(400).json({ error: '쓰레기통 상태를 선택해주세요.' });
   }
@@ -664,11 +726,16 @@ app.post('/api/reports', express.json({ limit: '25mb' }), (req, res) => {
   try {
     // 사진을 모두 검사한 뒤에 저장해서, 중간에 실패하면 파일이 남지 않게 함
     const decoded = photos.map(decodePhoto);
+    const newBytes = decoded.reduce((sum, d) => sum + d.buffer.length, 0);
+    if (newBytes > 0 && getUploadedBytesTotal() + newBytes > REPORT_UPLOAD_MAX_TOTAL_BYTES) {
+      return res.status(503).json({ error: '사진 저장 공간이 가득 찼어요. 사진 없이 신고하거나 나중에 다시 시도해 주세요.' });
+    }
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    fs.mkdirSync(REPORT_UPLOAD_DIR, { recursive: true });
+    if (decoded.length > 0) fs.mkdirSync(REPORT_UPLOAD_DIR, { recursive: true });
     const photoFiles = decoded.map(({ ext, buffer }, i) => {
       const fileName = `${id}-${i + 1}.${ext}`;
       fs.writeFileSync(path.join(REPORT_UPLOAD_DIR, fileName), buffer);
+      uploadedBytesTotal = getUploadedBytesTotal() + buffer.length;
       return `uploads/reports/${fileName}`;
     });
 
@@ -690,7 +757,7 @@ app.post('/api/reports', express.json({ limit: '25mb' }), (req, res) => {
 
     const reports = readReports();
     reports.push(report);
-    fs.writeFileSync(REPORTS_FILE, JSON.stringify(reports, null, 2), 'utf-8');
+    writeReports(reports);
     console.log(`🚩 쓰레기통 신고 접수: [${status}] ${report.location.name || report.location.address}`);
     res.status(201).json({ id });
   } catch (err) {
@@ -699,15 +766,30 @@ app.post('/api/reports', express.json({ limit: '25mb' }), (req, res) => {
   }
 });
 
-// ── 서버 시작: 배출 규칙 + 재활용센터 데이터 로드 후 실행 (몇 초 걸릴 수 있어요) ──
+// ── 데이터 로드 + 실패 시 자동 재시도 ──
+// 공공 API가 잠깐 응답하지 않아 시작할 때 못 불러오면, 서버를 다시 시작할 때까지 데이터가 비어 있게 됨.
+// 그래서 실패하면 1분 → 5분 → 15분 → 이후 30분마다 다시 시도함 (불러오는 중 실패하면 기존 데이터는 그대로 둠)
+const RETRY_DELAYS_MS = [1, 5, 15, 30].map((min) => min * 60 * 1000);
+
+async function loadWithRetry(name, loader, attempt = 0) {
+  try {
+    await loader();
+  } catch (err) {
+    const delay = RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)];
+    console.error(`❌ ${name} 로드 실패 (${Math.round(delay / 60000)}분 뒤 다시 시도):`, err.message);
+    setTimeout(() => loadWithRetry(name, loader, attempt + 1), delay);
+  }
+}
+
+// ── 서버 시작: 데이터를 한 번 불러온 뒤 실행 (몇 초 걸릴 수 있어요, 실패한 데이터는 백그라운드에서 재시도) ──
 Promise.all([
-  loadWasteScheduleData().catch((err) => console.error('배출 규칙 데이터 로드 실패:', err)),
-  loadRecyclingCenterData().catch((err) => console.error('재활용센터 데이터 로드 실패:', err)),
-  loadDistrictTrashbinData().catch((err) => console.error('구청별 공공쓰레기통 데이터 로드 실패:', err)),
-  loadClothingBinData().catch((err) => console.error('의류수거함 데이터 로드 실패:', err)),
-])
-  .finally(() => {
-    app.listen(process.env.PORT || 4000, () => {
-      console.log('서버 실행 중: http://localhost:4000');
-    });
+  loadWithRetry('배출 규칙 데이터', loadWasteScheduleData),
+  loadWithRetry('재활용센터 데이터', loadRecyclingCenterData),
+  loadWithRetry('구청별 공공쓰레기통 데이터', loadDistrictTrashbinData),
+  loadWithRetry('의류수거함 데이터', loadClothingBinData),
+]).finally(() => {
+  const port = process.env.PORT || 4000;
+  app.listen(port, () => {
+    console.log(`서버 실행 중: 포트 ${port}`);
   });
+});
