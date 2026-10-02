@@ -165,7 +165,7 @@ const LEGEND_ITEMS = [
   { kind: 'center', label: '재활용센터', unit: '곳', dotClass: 'legendDotCenter', countClass: 'legendCountCenter' },
   { kind: 'clothing', label: '의류수거함', unit: '개', dotClass: 'legendDotClothing', countClass: 'legendCountClothing' },
 ];
-// 범례에서 아무것도 고르지 않았을 때 기본으로 보여줄 종류
+// 쓰레기통 종류 (범례에서 쓰레기통 종류를 하나도 고르지 않았을 때 전부 보여줌)
 // (재활용센터·의류수거함은 쓰레기통이 아니라서 기본으로는 숨기고, 범례에서 골랐을 때만 표시)
 const DEFAULT_VISIBLE_KINDS = ['general', 'recycle', 'both'];
 
@@ -179,8 +179,13 @@ const FACILITY_TYPES = [
   { kind: 'clothing', path: '/api/clothing-bins', radiusKm: (r) => Math.max(r * 2, 2) },
 ];
 
+// 쓰레기통 종류와 시설(재활용센터·의류수거함)은 따로 판단:
+// - 쓰레기통: 고른 쓰레기통 종류가 없으면 전부, 있으면 고른 종류만
+// - 시설: 골랐을 때만 (시설을 골라도 쓰레기통은 그대로 보임)
 function isKindShown(kind, selectedKinds) {
-  return selectedKinds.length > 0 ? selectedKinds.includes(kind) : DEFAULT_VISIBLE_KINDS.includes(kind);
+  if (!DEFAULT_VISIBLE_KINDS.includes(kind)) return selectedKinds.includes(kind);
+  const selectedBinKinds = selectedKinds.filter((k) => DEFAULT_VISIBLE_KINDS.includes(k));
+  return selectedBinKinds.length === 0 || selectedBinKinds.includes(kind);
 }
 
 // 클러스터 테두리 색 클래스 (일반은 기본 스타일)
@@ -961,7 +966,8 @@ function TrashMap() {
             </button>
           </div>
           <div className={styles.legend}>
-            {/* 누른 종류들만 지도에 표시(여러 개 선택 가능). 선택을 모두 풀면 기본 상태(쓰레기통 전체)로 돌아감 */}
+            {/* 쓰레기통 종류는 누른 종류만 표시(여러 개 선택 가능, 모두 풀면 쓰레기통 전체).
+                재활용센터·의류수거함은 누르면 쓰레기통 위에 더해서 표시 */}
             {LEGEND_ITEMS.map((item) => {
               const selected = selectedKinds.includes(item.kind);
               return (
