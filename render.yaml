@@ -16,3 +16,7 @@ services:
         sync: false
       - key: WASTE_ITEM_SERVICE_KEY
         sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false

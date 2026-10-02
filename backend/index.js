@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 app.use(cors());
@@ -624,7 +625,10 @@ app.get('/api/district-trashbins', (req, res) => {
   );
 });
 
-// ── 쓰레기통 신고 접수 (사진은 base64로 받아 파일로 저장, 신고 내용은 JSON 파일에 누적) ──
+// ── 쓰레기통 신고 접수 (사진은 base64로 받음) ──
+// Supabase 키가 있으면 신고 내용은 Supabase DB(reports 테이블), 사진은 Supabase 저장공간(report-photos)에 저장.
+// 키가 없으면(로컬 개발 등) 신고 내용은 JSON 파일, 사진은 uploads 폴더에 저장
+// (Render 무료 서버는 다시 시작하면 파일이 지워지므로 배포 환경에서는 Supabase를 사용)
 const REPORT_STATUSES = ['파손', '없음', '이동됨', '가득 참', '오염', '기타'];
 const REPORT_MAX_PHOTOS = 3;
 const REPORT_MAX_PHOTO_BYTES = 5 * 1024 * 1024;
@@ -698,10 +702,69 @@ function decodePhoto(dataUrl) {
   if (buffer.length > REPORT_MAX_PHOTO_BYTES) {
     throw Object.assign(new Error('사진 한 장은 5MB 이하만 첨부할 수 있어요.'), { status: 400 });
   }
-  return { ext, buffer };
+  return { ext, mime: match[1], buffer };
 }
 
-app.post('/api/reports', express.json({ limit: '25mb' }), (req, res) => {
+const REPORT_PHOTO_BUCKET = 'report-photos';
+const supabase =
+  process.env.SUPABASE_URL && process.env.SUPABASE_SECRET_KEY
+    ? createClient(process.env.SUPABASE_URL.trim().replace(/\/$/, ''), process.env.SUPABASE_SECRET_KEY.trim(), {
+        auth: { persistSession: false, autoRefreshToken: false },
+      })
+    : null;
+console.log(supabase ? '신고 저장소: Supabase' : '신고 저장소: 로컬 파일 (SUPABASE_URL, SUPABASE_SECRET_KEY 없음)');
+
+// 사진을 먼저 올리고 신고 내용을 저장. 중간에 실패하면 이미 올린 사진은 지워서 주인 없는 사진이 남지 않게 함
+async function saveReportToSupabase(report, decoded) {
+  const uploaded = [];
+  try {
+    for (const [i, { ext, mime, buffer }] of decoded.entries()) {
+      const fileName = `${report.id}-${i + 1}.${ext}`;
+      const { error } = await supabase.storage.from(REPORT_PHOTO_BUCKET).upload(fileName, buffer, { contentType: mime });
+      if (error) throw new Error(`사진 업로드 실패: ${error.message}`);
+      uploaded.push(fileName);
+    }
+    const { error } = await supabase.from('reports').insert({
+      id: report.id,
+      created_at: report.createdAt,
+      status: report.status,
+      memo: report.memo,
+      location_name: report.location.name,
+      address: report.location.address,
+      region: report.location.region,
+      lat: report.location.lat,
+      lng: report.location.lng,
+      manager_name: report.manager.name,
+      manager_tel: report.manager.tel,
+      photos: uploaded,
+    });
+    if (error) throw new Error(`신고 저장 실패: ${error.message}`);
+  } catch (err) {
+    if (uploaded.length > 0) await supabase.storage.from(REPORT_PHOTO_BUCKET).remove(uploaded).catch(() => {});
+    throw err;
+  }
+}
+
+function saveReportToFile(report, decoded) {
+  const newBytes = decoded.reduce((sum, d) => sum + d.buffer.length, 0);
+  if (newBytes > 0 && getUploadedBytesTotal() + newBytes > REPORT_UPLOAD_MAX_TOTAL_BYTES) {
+    throw Object.assign(new Error('사진 저장 공간이 가득 찼어요. 사진 없이 신고하거나 나중에 다시 시도해 주세요.'), {
+      status: 503,
+    });
+  }
+  if (decoded.length > 0) fs.mkdirSync(REPORT_UPLOAD_DIR, { recursive: true });
+  const photoFiles = decoded.map(({ ext, buffer }, i) => {
+    const fileName = `${report.id}-${i + 1}.${ext}`;
+    fs.writeFileSync(path.join(REPORT_UPLOAD_DIR, fileName), buffer);
+    uploadedBytesTotal = getUploadedBytesTotal() + buffer.length;
+    return `uploads/reports/${fileName}`;
+  });
+  const reports = readReports();
+  reports.push({ ...report, photos: photoFiles });
+  writeReports(reports);
+}
+
+app.post('/api/reports', express.json({ limit: '25mb' }), async (req, res) => {
   // 값이 null이거나 형식이 다르게 와도(직접 API를 호출한 경우 등) 500 대신 400으로 안내하도록 기본값으로 바꿈
   const body = isPlainObject(req.body) ? req.body : {};
   const status = body.status;
@@ -724,20 +787,9 @@ app.post('/api/reports', express.json({ limit: '25mb' }), (req, res) => {
   }
 
   try {
-    // 사진을 모두 검사한 뒤에 저장해서, 중간에 실패하면 파일이 남지 않게 함
+    // 사진을 모두 검사한 뒤에 저장해서, 형식이 잘못된 사진이 있으면 아무것도 저장하지 않음
     const decoded = photos.map(decodePhoto);
-    const newBytes = decoded.reduce((sum, d) => sum + d.buffer.length, 0);
-    if (newBytes > 0 && getUploadedBytesTotal() + newBytes > REPORT_UPLOAD_MAX_TOTAL_BYTES) {
-      return res.status(503).json({ error: '사진 저장 공간이 가득 찼어요. 사진 없이 신고하거나 나중에 다시 시도해 주세요.' });
-    }
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    if (decoded.length > 0) fs.mkdirSync(REPORT_UPLOAD_DIR, { recursive: true });
-    const photoFiles = decoded.map(({ ext, buffer }, i) => {
-      const fileName = `${id}-${i + 1}.${ext}`;
-      fs.writeFileSync(path.join(REPORT_UPLOAD_DIR, fileName), buffer);
-      uploadedBytesTotal = getUploadedBytesTotal() + buffer.length;
-      return `uploads/reports/${fileName}`;
-    });
 
     const report = {
       id,
@@ -752,12 +804,10 @@ app.post('/api/reports', express.json({ limit: '25mb' }), (req, res) => {
         lng: Number(location.lng) || null,
       },
       manager: { name: String(manager.name || ''), tel: String(manager.tel || '') },
-      photos: photoFiles,
     };
 
-    const reports = readReports();
-    reports.push(report);
-    writeReports(reports);
+    if (supabase) await saveReportToSupabase(report, decoded);
+    else saveReportToFile(report, decoded);
     console.log(`🚩 쓰레기통 신고 접수: [${status}] ${report.location.name || report.location.address}`);
     res.status(201).json({ id });
   } catch (err) {
